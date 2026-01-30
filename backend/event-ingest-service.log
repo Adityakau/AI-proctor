@@ -1,0 +1,40 @@
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v3.3.2)
+
+{"timestamp":"2026-01-28 17:01:15,966","level":"INFO","thread":"main","logger":"c.e.p.i.EventIngestApplication","message":"Starting EventIngestApplication using Java 17.0.17 with PID 6078 (/Users/Aditya/Desktop/PROCTORING/backend/event-ingest-service/target/event-ingest-service-1.0.0.jar started by Aditya in /Users/Aditya/Desktop/PROCTORING/backend)","mdc":}
+{"timestamp":"2026-01-28 17:01:15,970","level":"INFO","thread":"main","logger":"c.e.p.i.EventIngestApplication","message":"No active profile set, falling back to 1 default profile: "default"","mdc":}
+{"timestamp":"2026-01-28 17:01:20,299","level":"INFO","thread":"main","logger":"o.s.d.r.c.RepositoryConfigurationDelegate","message":"Multiple Spring Data modules found, entering strict repository configuration mode","mdc":}
+{"timestamp":"2026-01-28 17:01:20,299","level":"INFO","thread":"main","logger":"o.s.d.r.c.RepositoryConfigurationDelegate","message":"Bootstrapping Spring Data JPA repositories in DEFAULT mode.","mdc":}
+{"timestamp":"2026-01-28 17:01:21,190","level":"INFO","thread":"main","logger":"o.s.d.r.c.RepositoryConfigurationDelegate","message":"Finished Spring Data repository scanning in 830 ms. Found 1 JPA repository interface.","mdc":}
+{"timestamp":"2026-01-28 17:01:22,831","level":"INFO","thread":"main","logger":"o.s.d.r.c.RepositoryConfigurationDelegate","message":"Multiple Spring Data modules found, entering strict repository configuration mode","mdc":}
+{"timestamp":"2026-01-28 17:01:22,847","level":"INFO","thread":"main","logger":"o.s.d.r.c.RepositoryConfigurationDelegate","message":"Bootstrapping Spring Data Redis repositories in DEFAULT mode.","mdc":}
+{"timestamp":"2026-01-28 17:01:22,994","level":"INFO","thread":"main","logger":"o.s.d.r.c.RepositoryConfigurationExtensionSupport","message":"Spring Data Redis - Could not safely identify store assignment for repository candidate interface com.example.proctoring.ingest.repository.ProctoringSessionRepository; If you want this repository to be a Redis repository, consider annotating your entities with one of these annotations: org.springframework.data.redis.core.RedisHash (preferred), or consider extending one of the following types with your repository: org.springframework.data.keyvalue.repository.KeyValueRepository","mdc":}
+{"timestamp":"2026-01-28 17:01:22,994","level":"INFO","thread":"main","logger":"o.s.d.r.c.RepositoryConfigurationDelegate","message":"Finished Spring Data repository scanning in 74 ms. Found 0 Redis repository interfaces.","mdc":}
+{"timestamp":"2026-01-28 17:01:27,298","level":"INFO","thread":"main","logger":"o.s.b.w.e.t.TomcatWebServer","message":"Tomcat initialized with port 8082 (http)","mdc":}
+{"timestamp":"2026-01-28 17:01:27,321","level":"INFO","thread":"main","logger":"o.a.c.c.StandardService","message":"Starting service [Tomcat]","mdc":}
+{"timestamp":"2026-01-28 17:01:27,322","level":"INFO","thread":"main","logger":"o.a.c.c.StandardEngine","message":"Starting Servlet engine: [Apache Tomcat/10.1.26]","mdc":}
+{"timestamp":"2026-01-28 17:01:27,469","level":"INFO","thread":"main","logger":"o.a.c.c.C.[.[.[/]","message":"Initializing Spring embedded WebApplicationContext","mdc":}
+{"timestamp":"2026-01-28 17:01:27,514","level":"INFO","thread":"main","logger":"o.s.b.w.s.c.ServletWebServerApplicationContext","message":"Root WebApplicationContext: initialization completed in 11143 ms","mdc":}
+{"timestamp":"2026-01-28 17:01:29,295","level":"INFO","thread":"main","logger":"o.h.j.i.u.LogHelper","message":"HHH000204: Processing PersistenceUnitInfo [name: default]","mdc":}
+{"timestamp":"2026-01-28 17:01:29,626","level":"INFO","thread":"main","logger":"o.h.Version","message":"HHH000412: Hibernate ORM core version 6.5.2.Final","mdc":}
+{"timestamp":"2026-01-28 17:01:29,853","level":"INFO","thread":"main","logger":"o.h.c.i.RegionFactoryInitiator","message":"HHH000026: Second-level cache disabled","mdc":}
+{"timestamp":"2026-01-28 17:01:31,925","level":"INFO","thread":"main","logger":"o.s.o.j.p.SpringPersistenceUnitInfo","message":"No LoadTimeWeaver setup: ignoring JPA class transformer","mdc":}
+{"timestamp":"2026-01-28 17:01:32,086","level":"INFO","thread":"main","logger":"c.z.h.HikariDataSource","message":"HikariPool-1 - Starting...","mdc":}
+{"timestamp":"2026-01-28 17:01:33,494","level":"INFO","thread":"main","logger":"c.z.h.p.HikariPool","message":"HikariPool-1 - Added connection com.mysql.cj.jdbc.ConnectionImpl@5977bdea","mdc":}
+{"timestamp":"2026-01-28 17:01:33,498","level":"INFO","thread":"main","logger":"c.z.h.HikariDataSource","message":"HikariPool-1 - Start completed.","mdc":}
+{"timestamp":"2026-01-28 17:01:38,627","level":"INFO","thread":"main","logger":"o.h.e.t.j.p.i.JtaPlatformInitiator","message":"HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)","mdc":}
+{"timestamp":"2026-01-28 17:01:38,868","level":"INFO","thread":"main","logger":"o.s.o.j.LocalContainerEntityManagerFactoryBean","message":"Initialized JPA EntityManagerFactory for persistence unit 'default'","mdc":}
+{"timestamp":"2026-01-28 17:01:42,719","level":"WARN","thread":"main","logger":"o.s.b.a.o.j.JpaBaseConfiguration$JpaWebConfiguration","message":"spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning","mdc":}
+{"timestamp":"2026-01-28 17:01:44,423","level":"INFO","thread":"main","logger":"o.s.b.a.e.w.EndpointLinksResolver","message":"Exposing 3 endpoints beneath base path '/actuator'","mdc":}
+{"timestamp":"2026-01-28 17:01:47,662","level":"INFO","thread":"main","logger":"o.s.b.w.e.t.TomcatWebServer","message":"Tomcat started on port 8082 (http) with context path '/'","mdc":}
+{"timestamp":"2026-01-28 17:01:47,698","level":"INFO","thread":"main","logger":"c.e.p.i.EventIngestApplication","message":"Started EventIngestApplication in 34.881 seconds (process running for 36.348)","mdc":}
+{"timestamp":"2026-01-28 17:01:47,881","level":"INFO","thread":"SpringApplicationShutdownHook","logger":"o.s.o.j.LocalContainerEntityManagerFactoryBean","message":"Closing JPA EntityManagerFactory for persistence unit 'default'","mdc":}
+{"timestamp":"2026-01-28 17:01:47,887","level":"INFO","thread":"SpringApplicationShutdownHook","logger":"c.z.h.HikariDataSource","message":"HikariPool-1 - Shutdown initiated...","mdc":}
+{"timestamp":"2026-01-28 17:01:47,954","level":"INFO","thread":"SpringApplicationShutdownHook","logger":"c.z.h.HikariDataSource","message":"HikariPool-1 - Shutdown completed.","mdc":}
