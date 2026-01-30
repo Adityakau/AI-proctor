@@ -1,0 +1,30 @@
+server:
+  port: 8084
+
+spring:
+  application:
+    name: dashboard-api
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/proctoring}
+    username: ${SPRING_DATASOURCE_USERNAME:proctor}
+    password: ${SPRING_DATASOURCE_PASSWORD:proctorpassword}
+  jpa:
+    hibernate:
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:update}
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+jwt:
+  public-key-location: ${JWT_PUBLIC_KEY_LOCATION:classpath:jwt-public.pem}
+
