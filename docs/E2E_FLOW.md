@@ -78,11 +78,42 @@ const pitch = (noseTip.y - (forehead.y + chin.y) / 2) * 180;
 
 ---
 
-## 3. Backend Internal Flow
+## 3. Backend Internal Flow (Modular Monolith)
 
-### Event Ingest Service
-**File**: `backend/event-ingest-service/src/main/java/com/example/proctoring/ingest/`
+The backend is consolidated into a single Spring Boot application: `proctoring-backend`.
 
+### Package Structure
+```
+com.example.proctoring/
+├── ProctoringApplication.java      # Main entry point
+├── session/                        # Session management
+│   ├── controller/SessionController.java
+│   └── service/SessionService.java
+├── ingest/                         # Event ingestion
+│   ├── controller/EventBatchController.java
+│   └── service/EventIngestService.java
+├── alerts/                         # Alert retrieval
+│   └── controller/AlertsController.java
+├── evidence/                       # Thumbnail serving
+│   └── controller/EvidenceController.java
+├── rules/                          # Rules evaluation (Kafka consumer)
+│   ├── consumer/AnomalyEventConsumer.java
+│   └── service/RulesEvaluationService.java
+├── dev/                            # Dev-only token generation
+│   └── controller/DevTokenController.java
+├── dashboard/                      # Dashboard APIs (placeholder)
+│   └── controller/SessionReadController.java
+├── common/                         # Shared code
+│   ├── model/                      # JPA entities
+│   ├── dto/                        # DTOs
+│   └── repository/                 # Repositories
+├── security/                       # JWT config
+│   ├── JwtClaims.java
+│   └── JwtSecurityConfig.java
+└── config/                         # Other config
+```
+
+### Event Ingest Flow
 ```
 EventBatchController.ingestBatch()
     ↓

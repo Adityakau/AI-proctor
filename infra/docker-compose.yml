@@ -53,8 +53,9 @@ services:
       - "9000:9000"
       - "9001:9001"
 
-  auth-service:
-    build: ../backend/auth-service
+  # Unified backend service (replaces auth-service, event-ingest-service, rules-engine, dashboard-api)
+  proctoring-backend:
+    build: ../backend/proctoring-backend
     environment:
       SPRING_PROFILES_ACTIVE: docker
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/proctoring_dev
@@ -64,72 +65,15 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
       JWT_PUBLIC_KEY_LOCATION: classpath:jwt-public.pem
-    ports:
-      - "8081:8081"
-    depends_on:
-      mysql:
-        condition: service_healthy
-      redis:
-        condition: service_started
-
-  event-ingest-service:
-    build: ../backend/event-ingest-service
-    environment:
-      SPRING_PROFILES_ACTIVE: docker
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/proctoring_dev
-      SPRING_DATASOURCE_USERNAME: proctor
-      SPRING_DATASOURCE_PASSWORD: 123
-      SPRING_REDIS_HOST: redis
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      SPRING_JPA_HIBERNATE_DDL_AUTO: update
-      JWT_PUBLIC_KEY_LOCATION: classpath:jwt-public.pem
+      JWT_PRIVATE_KEY_LOCATION: classpath:jwt-private.pem
+      PROCTORING_KAFKA_ENABLED: "false"
     volumes:
       - ./thumbnails:/tmp/proctoring/thumbnails
     ports:
       - "8082:8082"
     depends_on:
-      kafka:
-        condition: service_started
       redis:
         condition: service_started
-      mysql:
-        condition: service_healthy
-
-  rules-engine:
-    build: ../backend/rules-engine
-    environment:
-      SPRING_PROFILES_ACTIVE: docker
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/proctoring_dev
-      SPRING_DATASOURCE_USERNAME: proctor
-      SPRING_DATASOURCE_PASSWORD: 123
-      SPRING_REDIS_HOST: redis
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      SPRING_JPA_HIBERNATE_DDL_AUTO: update
-      JWT_PUBLIC_KEY_LOCATION: classpath:jwt-public.pem
-    ports:
-      - "8083:8083"
-    depends_on:
-      kafka:
-        condition: service_started
-      redis:
-        condition: service_started
-      mysql:
-        condition: service_healthy
-
-  dashboard-api:
-    build: ../backend/dashboard-api
-    environment:
-      SPRING_PROFILES_ACTIVE: docker
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/proctoring_dev
-      SPRING_DATASOURCE_USERNAME: proctor
-      SPRING_DATASOURCE_PASSWORD: 123
-      SPRING_REDIS_HOST: redis
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      SPRING_JPA_HIBERNATE_DDL_AUTO: update
-      JWT_PUBLIC_KEY_LOCATION: classpath:jwt-public.pem
-    ports:
-      - "8084:8084"
-    depends_on:
       mysql:
         condition: service_healthy
 
@@ -141,5 +85,4 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - auth-service
-      - event-ingest-service
+      - proctoring-backend
