@@ -11,6 +11,8 @@ import com.example.proctoring.common.repository.AnomalyEventRepository;
 import com.example.proctoring.common.repository.ProctoringSessionRepository;
 import com.example.proctoring.common.repository.RiskScoreSnapshotRepository;
 import com.example.proctoring.security.JwtClaims;
+import com.example.proctoring.dashboard.contract.DashboardSessionSummaryResponse;
+import com.example.proctoring.dashboard.service.DashboardSessionReadService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
@@ -29,9 +31,12 @@ import java.util.stream.Collectors;
 public class SessionReadController {
 
     private final ProctoringSessionRepository sessionRepository;
+    private final DashboardSessionReadService dashboardService;
 
-    public SessionReadController(ProctoringSessionRepository sessionRepository) {
+    public SessionReadController(ProctoringSessionRepository sessionRepository,
+                                DashboardSessionReadService dashboardService) {
         this.sessionRepository = sessionRepository;
+        this.dashboardService = dashboardService;
     }
 
     @GetMapping("/sessions/{id}")
@@ -41,6 +46,16 @@ public class SessionReadController {
         JwtClaims claims = JwtClaims.fromJwt(jwt);
         return sessionRepository.findById(id)
                 .filter(s -> s.getTenantId().equals(claims.getTenantId()))
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    @GetMapping("/sessions/{id}/summary")
+    public ResponseEntity<DashboardSessionSummaryResponse> getSessionSummary(
+            @org.springframework.security.core.annotation.AuthenticationPrincipal Jwt jwt,
+            @PathVariable String id) {
+        JwtClaims claims = JwtClaims.fromJwt(jwt);
+        return dashboardService.getSessionSummary(id, claims.getTenantId())
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }

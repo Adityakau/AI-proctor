@@ -139,6 +139,15 @@ EventIngestService.processBatch()
 | `FACE_MISSING` | 3+ events in 5 min | HIGH |
 | HIGH/CRITICAL severity | Any | Same as event |
 
+### Trust Score Calculation
+Trust score is a percentage (0-100%) representing the overall session integrity.
+- **Data Source**: Confidence scores extracted from `proctoring_alerts.details_json`.
+- **Formula**: `trustScorePercent = round(avg(confidence) * 100)`
+- **Rules**:
+    - If no alerts exist, the score defaults to 100%.
+    - If an alert is missing the confidence field, it is ignored in the average.
+    - If all alerts are ignored, the score defaults to 100%.
+
 ---
 
 ## 4. Database Schema
