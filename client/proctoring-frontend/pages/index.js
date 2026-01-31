@@ -10,7 +10,8 @@ import { useFullscreen } from '../hooks/useFullscreen';
 
 export default function Home() {
   const router = useRouter();
-  const { webcam, screenShare } = useProctoring();
+  const { webcam, screenShare, session } = useProctoring();
+  const [isStarting, setIsStarting] = useState(false);
 
   const videoRef = useRef(null);
   const screenPreviewRef = useRef(null);
@@ -25,11 +26,30 @@ export default function Home() {
     }
   }, [webcam.stream]);
 
-  const handleStartExam = () => {
-    if (webcam.isActive && isFullscreen && screenShare.isSharing) {
-      router.push('/exam');
-    } else {
+  const handleStartExam = async () => {
+    if (!webcam.isActive || !isFullscreen || !screenShare.isSharing) {
       alert("Please complete all system checks.");
+      return;
+    }
+
+    setIsStarting(true);
+    try {
+      // Initialize session (fetches dev token + starts session)
+      const result = await session.initialize({
+        maxLookAwaySeconds: 5,
+        maxLookAwayWindowSeconds: 30,
+      });
+
+      if (result) {
+        router.push('/exam');
+      } else {
+        alert("Failed to start session. Please try again.");
+      }
+    } catch (e) {
+      console.error("Session start error:", e);
+      alert("Failed to connect to server.");
+    } finally {
+      setIsStarting(false);
     }
   };
 
@@ -134,16 +154,19 @@ export default function Home() {
             <div className="pt-6">
               <button
                 onClick={handleStartExam}
-                disabled={!allChecksPassed}
-                className={`w-full py-4 rounded-lg text-lg font-bold transition-all ${allChecksPassed
+                disabled={!allChecksPassed || isStarting}
+                className={`w-full py-4 rounded-lg text-lg font-bold transition-all ${allChecksPassed && !isStarting
                   ? 'bg-green-600 text-white hover:bg-green-700 shadow-lg transform hover:-translate-y-1'
                   : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   }`}
               >
-                Start Exam
+                {isStarting ? 'Connecting...' : 'Start Exam'}
               </button>
               {!allChecksPassed && (
                 <p className="text-center text-xs text-gray-500 mt-2">Complete all steps above to proceed</p>
+              )}
+              {session.error && (
+                <p className="text-center text-xs text-red-500 mt-2">{session.error}</p>
               )}
             </div>
           </div>

@@ -3,6 +3,8 @@ import { useWebcam } from '../hooks/useWebcam';
 import { useScreenShare } from '../hooks/useScreenShare';
 import { useProctoringState } from '../hooks/useProctoringState';
 import { useWindowFocus } from '../hooks/useWindowFocus';
+import { useSession } from '../hooks/useSession';
+import { useEventBatcher } from '../hooks/useEventBatcher';
 
 const ProctoringContext = createContext(null);
 
@@ -12,12 +14,22 @@ export function ProctoringProvider({ children }) {
     const screenShare = useScreenShare();
     const proctoring = useProctoringState();
     const windowFocus = useWindowFocus();
+    const session = useSession();
+
+    // Event batcher depends on session state
+    const eventBatcher = useEventBatcher({
+        jwt: session.jwt,
+        sessionId: session.sessionId,
+        isActive: session.isActive,
+    });
 
     const value = {
         webcam,
         screenShare,
         proctoring,
-        windowFocus
+        windowFocus,
+        session,
+        eventBatcher,
     };
 
     return (

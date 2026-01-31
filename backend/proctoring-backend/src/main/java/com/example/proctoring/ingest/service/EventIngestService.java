@@ -183,7 +183,30 @@ public class EventIngestService {
                 shouldAlert = true;
                 alertSeverity = "HIGH";
             }
+        } else if ("TAB_SWITCH".equals(type)) {
+            // TAB_SWITCH: alert after 2 occurrences in 5 minutes
+            String countKey = "alert-count:" + sessionId + ":" + type;
+            Long count = redisTemplate.opsForValue().increment(countKey);
+            if (count != null && count == 1L) {
+                redisTemplate.expire(countKey, Duration.ofMinutes(5));
+            }
+            if (count != null && count >= 2) {
+                shouldAlert = true;
+                alertSeverity = "MEDIUM";
+            }
+        } else if ("LOOK_AWAY".equals(type)) {
+            // LOOK_AWAY: alert after 5 occurrences in 5 minutes to reduce noise
+            String countKey = "alert-count:" + sessionId + ":" + type;
+            Long count = redisTemplate.opsForValue().increment(countKey);
+            if (count != null && count == 1L) {
+                redisTemplate.expire(countKey, Duration.ofMinutes(5));
+            }
+            if (count != null && count >= 5) {
+                shouldAlert = true;
+                alertSeverity = "MEDIUM";
+            }
         }
+        // LOW_LIGHT: stored but no alert generated (informational)
 
         if (shouldAlert) {
             Alert alert = new Alert();

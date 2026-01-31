@@ -62,7 +62,7 @@ export function checkFacePresence(faces, consecutiveMissing) {
  */
 export function checkMultipleFaces(faces) {
     const confidentFaces = faces.filter(f => f.probability >= FACE_CONFIDENCE_THRESHOLD);
-    return confidentFaces.length > 1 ? 'MULTIPLE_FACES' : null;
+    return confidentFaces.length > 1 ? 'MULTI_PERSON' : null;
 }
 
 /**
@@ -98,8 +98,8 @@ export function checkBrightness(imageData) {
 
 // Head rotation threshold - ratio of distance difference
 // If one ear is much closer to nose than the other, head is rotated
-// 0.35 = 35% difference threshold (fairly lenient)
-export const HEAD_ROTATION_THRESHOLD = 0.35;
+// 0.50 = 50% difference threshold (higher to reduce false positives)
+export const HEAD_ROTATION_THRESHOLD = 0.50;
 
 /**
  * Check head rotation using BlazeFace landmarks
@@ -146,9 +146,9 @@ export function checkHeadRotation(face) {
 
     const asymmetryRatio = (maxDist - minDist) / maxDist;
 
-    // If asymmetry exceeds threshold, head is rotated
+    // If asymmetry exceeds threshold, head is rotated (looking away)
     if (asymmetryRatio > HEAD_ROTATION_THRESHOLD) {
-        return 'HEAD_ROTATED';
+        return 'LOOK_AWAY';
     }
 
     return null;

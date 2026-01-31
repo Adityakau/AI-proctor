@@ -15,7 +15,7 @@ import { useFullscreen } from '../hooks/useFullscreen';
 
 export default function Exam() {
     const router = useRouter();
-    const { webcam, screenShare, proctoring, windowFocus } = useProctoring();
+    const { webcam, screenShare, proctoring, windowFocus, eventBatcher } = useProctoring();
     const { isFullscreen, enterFullscreen } = useFullscreen();
     const {
         flags, messageLog, analysisEnabled, disableReason, lastProcessingTime,
@@ -60,13 +60,15 @@ export default function Exam() {
         }
     }, []);
 
-    // 4. Capture Violation Helper
+    // 4. Capture Violation Helper - Now sends to backend via eventBatcher
     const captureViolation = useCallback((type) => {
         if (!videoRef.current) return;
 
         try {
-            // Webcam Capture
+            // Capture webcam image (for UI display)
             let webcamImage = null;
+            let thumbnailBase64 = null;
+
             if (webcam.isActive && videoRef.current) {
                 const canvas = document.createElement('canvas');
                 canvas.width = 320;
@@ -74,57 +76,78 @@ export default function Exam() {
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
                 webcamImage = canvas.toDataURL('image/jpeg', 0.6);
+                thumbnailBase64 = webcamImage.split(',')[1]; // Raw base64 for backend
             }
 
-            // Screen Capture
+            // Capture screen image for TAB_SWITCH
             let screenImage = null;
-            if (screenShare.isSharing && screenVideoRef.current) {
+            if (type === 'TAB_SWITCH' && screenShare.isSharing && screenVideoRef.current) {
                 const canvas = document.createElement('canvas');
-                const w = screenVideoRef.current.videoWidth || 640;
-                const h = screenVideoRef.current.videoHeight || 360;
+                const w = Math.min(screenVideoRef.current.videoWidth || 640, 640);
+                const h = Math.min(screenVideoRef.current.videoHeight || 360, 360);
                 canvas.width = w;
                 canvas.height = h;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(screenVideoRef.current, 0, 0, w, h);
                 screenImage = canvas.toDataURL('image/jpeg', 0.6);
+                // For TAB_SWITCH, send screen image to backend instead of webcam
+                thumbnailBase64 = screenImage.split(',')[1];
             }
 
+            // Determine confidence based on type
+            const confidenceMap = {
+                MULTI_PERSON: 0.95,
+                FACE_MISSING: 0.90,
+                TAB_SWITCH: 0.99,
+                LOW_LIGHT: 0.70,
+                LOOK_AWAY: 0.85,
+            };
+
+            // Send to backend via eventBatcher
+            const eventId = eventBatcher.addEvent(
+                type,
+                confidenceMap[type] || 0.8,
+                {},
+                thumbnailBase64
+            );
+
+            // Store for local UI display (with full dataURL images)
             const newViolation = {
                 id: Date.now(),
                 timestamp: new Date().toLocaleTimeString(),
                 type,
-                image: webcamImage, // Always capture user image
-                screenImage: screenImage
+                eventId,
+                image: webcamImage,       // Full dataURL for UI
+                screenImage: screenImage, // Full dataURL for UI
             };
 
             setViolations(prev => {
-                const updated = [newViolation, ...prev].slice(0, 5); // Keep last 5
+                const updated = [newViolation, ...prev].slice(0, 5);
                 localStorage.setItem('proctoring_violations', JSON.stringify(updated));
                 return updated;
             });
         } catch (err) {
-            console.error("Screenshot capture failed", err);
+            console.error("Violation capture failed", err);
         }
-    }, [webcam.isActive, screenShare.isSharing]);
+    }, [webcam.isActive, screenShare.isSharing, eventBatcher]);
 
     const clearViolations = useCallback(() => {
         setViolations([]);
         localStorage.removeItem('proctoring_violations');
     }, []);
 
-    // 5. Monitoring Logic (Tab Focus)
+    // 5. Monitoring Logic (Tab Focus) - Uses TAB_SWITCH
     useEffect(() => {
         if (!windowFocus.isFocused) {
-            addFlag('TAB_FOCUS_LOST');
+            addFlag('TAB_SWITCH');
             setFocusModal(true);
             // Wait 500ms for screen share stream to update
-            // (Browser needs ~200-300ms to pipe new frame to video element)
             const timer = setTimeout(() => {
-                captureViolation('TAB_FOCUS_LOST');
+                captureViolation('TAB_SWITCH');
             }, 500);
             return () => clearTimeout(timer);
         } else {
-            removeFlag('TAB_FOCUS_LOST');
+            removeFlag('TAB_SWITCH');
         }
     }, [windowFocus.isFocused, addFlag, removeFlag, captureViolation]);
 
@@ -159,17 +182,17 @@ export default function Exam() {
         return () => clearTimeout(timer);
     }, [flags.FACE_MISSING, faceModal, captureViolation]);
 
-    // Multiple Faces (10s timer)
+    // Multiple Faces (10s timer) - Uses MULTI_PERSON
     useEffect(() => {
         let timer;
-        if (flags.MULTIPLE_FACES && !multipleModal) {
+        if (flags.MULTI_PERSON && !multipleModal) {
             timer = setTimeout(() => {
-                captureViolation('MULTIPLE_FACES');
+                captureViolation('MULTI_PERSON');
                 setMultipleModal(true);
             }, 10000);
         }
         return () => clearTimeout(timer);
-    }, [flags.MULTIPLE_FACES, multipleModal, captureViolation]);
+    }, [flags.MULTI_PERSON, multipleModal, captureViolation]);
 
 
     // 8. Frame Analysis
@@ -267,7 +290,7 @@ export default function Exam() {
                                     <div key={v.id} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden group hover:border-red-300 transition-colors">
                                         <div className="bg-red-50 px-3 py-1.5 border-b border-red-100 flex justify-between items-center">
                                             <span className="text-[10px] font-bold text-red-700 uppercase tracking-wide">
-                                                {v.type === 'TAB_FOCUS_LOST' ? 'Focus Lost' : v.type.replace('_', ' ')}
+                                                {v.type === 'TAB_SWITCH' ? 'Tab Switch' : v.type.replace('_', ' ')}
                                             </span>
                                             <span className="text-[10px] text-red-400 font-mono">{v.timestamp}</span>
                                         </div>

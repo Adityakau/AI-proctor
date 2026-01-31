@@ -10,14 +10,11 @@ import { useState, useCallback, useRef } from 'react';
 // Maximum messages to keep in log (prevents memory growth)
 const MAX_LOG_ENTRIES = 10;
 
-// Processing time budget in ms - exceed this triggers safety disable
+// Processing time budget in ms - for display/warning only (no auto-disable)
 export const PROCESSING_BUDGET_MS = 250;
 
-// Number of consecutive budget overruns before disabling
-const BUDGET_OVERRUN_THRESHOLD = 3;
-
 /**
- * @typedef {'FACE_OK' | 'FACE_MISSING' | 'MULTIPLE_FACES' | 'LOW_LIGHT' | 'HEAD_ROTATED' | 'TAB_FOCUS_LOST' | 'SCREEN_SHARE_ACTIVE'} ProctoringFlag
+ * @typedef {'FACE_OK' | 'FACE_MISSING' | 'MULTI_PERSON' | 'LOW_LIGHT' | 'LOOK_AWAY' | 'TAB_SWITCH' | 'SCREEN_SHARE_ACTIVE'} ProctoringFlag
  */
 
 /**
@@ -44,9 +41,6 @@ export function useProctoringState() {
     // Consecutive missed face counter
     const consecutiveMissingRef = useRef(0);
 
-    // Budget overrun counter
-    const budgetOverrunCountRef = useRef(0);
-
     // Last processing time for display
     const [lastProcessingTime, setLastProcessingTime] = useState(0);
 
@@ -56,11 +50,10 @@ export function useProctoringState() {
     const flagMessages = {
         FACE_OK: 'Face detected - OK',
         FACE_MISSING: 'Warning: Face not detected',
-        MULTIPLE_FACES: 'Error: Multiple faces detected',
+        MULTI_PERSON: 'Error: Multiple faces detected',
         LOW_LIGHT: 'Warning: Low light conditions',
-        LOW_LIGHT: 'Warning: Low light conditions',
-        HEAD_ROTATED: 'Warning: Head rotated - face not clear',
-        TAB_FOCUS_LOST: 'Warning: Tab focus lost (switched tab/window)',
+        LOOK_AWAY: 'Warning: Looking away from screen',
+        TAB_SWITCH: 'Warning: Tab/window switched',
         SCREEN_SHARE_ACTIVE: 'Info: Screen share active'
     };
 
@@ -127,19 +120,9 @@ export function useProctoringState() {
         // Update consecutive missing counter
         consecutiveMissingRef.current = newConsecutiveMissing;
 
-        // Check processing budget
+        // Log budget overrun but continue processing (no auto-disable)
         if (processingTime > PROCESSING_BUDGET_MS) {
-            budgetOverrunCountRef.current++;
-
-            if (budgetOverrunCountRef.current >= BUDGET_OVERRUN_THRESHOLD) {
-                // Safety: disable analysis
-                setAnalysisEnabled(false);
-                setDisableReason(`Processing exceeded ${PROCESSING_BUDGET_MS}ms budget`);
-                return;
-            }
-        } else {
-            // Reset overrun counter on good frame
-            budgetOverrunCountRef.current = 0;
+            console.warn(`Frame processing took ${processingTime}ms (budget: ${PROCESSING_BUDGET_MS}ms)`);
         }
 
         // Handle face status
@@ -152,10 +135,10 @@ export function useProctoringState() {
         }
 
         // Handle multiple faces
-        if (multipleFlag === 'MULTIPLE_FACES') {
-            addFlag('MULTIPLE_FACES');
+        if (multipleFlag === 'MULTI_PERSON') {
+            addFlag('MULTI_PERSON');
         } else {
-            removeFlag('MULTIPLE_FACES');
+            removeFlag('MULTI_PERSON');
         }
 
         // Handle brightness
@@ -165,11 +148,11 @@ export function useProctoringState() {
             removeFlag('LOW_LIGHT');
         }
 
-        // Handle head rotation
-        if (rotationFlag === 'HEAD_ROTATED') {
-            addFlag('HEAD_ROTATED');
+        // Handle head rotation (looking away)
+        if (rotationFlag === 'LOOK_AWAY') {
+            addFlag('LOOK_AWAY');
         } else {
-            removeFlag('HEAD_ROTATED');
+            removeFlag('LOOK_AWAY');
         }
     }, [addFlag, removeFlag]);
 

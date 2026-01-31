@@ -128,11 +128,11 @@ export function useFrameAnalyzer({
             const multipleFlag = checkMultipleFaces(faces);
             const brightnessFlag = checkBrightness(imageData);
 
-            // Check head rotation (disabled)
+            // Check head rotation (enabled for LOOK_AWAY detection)
             let rotationFlag = null;
-            // if (faces.length === 1) {
-            //     rotationFlag = checkHeadRotation(faces[0]);
-            // }
+            if (faces.length === 1) {
+                rotationFlag = checkHeadRotation(faces[0]);
+            }
 
             const processingTime = performance.now() - startTime;
 
