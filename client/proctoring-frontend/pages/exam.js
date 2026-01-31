@@ -178,6 +178,7 @@ export default function Exam() {
     const [faceModal, setFaceModal] = useState(false);
     const [multipleModal, setMultipleModal] = useState(false);
     const [focusModal, setFocusModal] = useState(false);
+    const [lightingModal, setLightingModal] = useState(false);
 
     // Face Missing (5s timer)
     useEffect(() => {
@@ -234,6 +235,20 @@ export default function Exam() {
         };
     }, [flags.MULTI_PERSON, multipleModal, captureViolation]);
 
+    // Low Light (5s timer)
+    useEffect(() => {
+        let timer;
+        if (flags.LOW_LIGHT && !lightingModal) {
+            timer = setTimeout(() => {
+                // Optional: Capture violation or just warn? User asked for error modal.
+                // We'll capture it as a violation for record keeping.
+                captureViolation('LOW_LIGHT');
+                setLightingModal(true);
+            }, 5000);
+        }
+        return () => clearTimeout(timer);
+    }, [flags.LOW_LIGHT, lightingModal, captureViolation]);
+
 
     // 8. Frame Analysis
     const handleAnalysisResult = useCallback((results) => {
@@ -284,177 +299,246 @@ export default function Exam() {
                     />
                 </div>
 
-                {/* RIGHT COLUMN: Dashboard Tools */}
-                <div className="w-96 bg-white border-l border-gray-200 flex flex-col shadow-xl z-10">
-                    <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-                        <h1 className="text-lg font-bold text-gray-800">Exam Monitor</h1>
-                        <span className="text-[10px] text-gray-400 font-mono">ID: 8X29-A1</span>
-                    </div>
+                {/* 1. Status Icons (Proctoring) */}
+                <div className="flex justify-end">
+                    <ProctoringStatusIcons
+                        flags={flags}
+                        screenShareActive={screenShare.isSharing}
+                        isFullscreen={isFullscreen}
+                    />
+                </div>
 
-                    {/* Status Panel (Top) */}
-                    <div className="p-4 border-b border-gray-100">
-                        <StatusPanel
-                            flags={flags}
-                            messageLog={messageLog}
-                            analysisEnabled={analysisEnabled}
-                            disableReason={disableReason}
-                            processingTime={lastProcessingTime}
-                            isModelLoading={modelLoading}
-                        />
-                    </div>
+                {/* Status Panel (Top) */}
+                <div className="p-4 border-b border-gray-100">
+                    <StatusPanel
+                        flags={flags}
+                        messageLog={messageLog}
+                        analysisEnabled={analysisEnabled}
+                        disableReason={disableReason}
+                        processingTime={lastProcessingTime}
+                        isModelLoading={modelLoading}
+                    />
+                </div>
 
-                    {/* Violation Gallery (Remaining Height) */}
-                    <div className="flex-1 overflow-y-auto p-4 bg-gray-50/30">
-                        <div className="flex justify-between items-center mb-3">
-                            <h3 className="font-semibold text-gray-700 text-sm flex items-center gap-2">
-                                <span>Recorded Incidents</span>
-                                {violations.length > 0 && (
-                                    <span className="bg-red-100 text-red-600 text-[10px] px-1.5 py-0.5 rounded-full font-bold">{violations.length}</span>
-                                )}
-                            </h3>
+                {/* Violation Gallery (Remaining Height) */}
+                <div className="flex-1 overflow-y-auto p-4 bg-gray-50/30">
+                    <div className="flex justify-between items-center mb-3">
+                        <h3 className="font-semibold text-gray-700 text-sm flex items-center gap-2">
+                            <span>Recorded Incidents</span>
                             {violations.length > 0 && (
-                                <button onClick={clearViolations} className="text-[10px] text-gray-400 hover:text-red-500 uppercase tracking-wider font-medium">
-                                    Clear All
-                                </button>
+                                <span className="bg-red-100 text-red-600 text-[10px] px-1.5 py-0.5 rounded-full font-bold">{violations.length}</span>
                             )}
+                    </div>
+
+                    {violations.length === 0 ? (
+                        <div className="h-20 flex flex-col items-center justify-center text-gray-400 border-2 border-dashed border-gray-200 rounded-lg">
+                            <span className="text-xl mb-1">🛡️</span>
+                            <span className="text-[10px]">Clean Record</span>
                         </div>
-
-                        {violations.length === 0 ? (
-                            <div className="h-32 flex flex-col items-center justify-center text-gray-400 border-2 border-dashed border-gray-200 rounded-lg">
-                                <span className="text-2xl mb-1">🛡️</span>
-                                <span className="text-xs">No violations detected</span>
-                            </div>
-                        ) : (
-                            <div className="space-y-4">
-                                {violations.map(v => (
-                                    <div key={v.id} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden group hover:border-red-300 transition-colors">
-                                        <div className="bg-red-50 px-3 py-1.5 border-b border-red-100 flex justify-between items-center">
-                                            <span className="text-[10px] font-bold text-red-700 uppercase tracking-wide">
-                                                {v.type === 'TAB_SWITCH' ? 'Tab Switch' : v.type.replace('_', ' ')}
-                                            </span>
-                                            <span className="text-[10px] text-red-400 font-mono">{v.timestamp}</span>
-                                        </div>
-                                        <div className="p-2 grid grid-cols-2 gap-2">
-                                            {/* Always show User Image */}
-                                            <div className="relative">
-                                                <img src={v.image} alt="User" className="w-full rounded bg-black aspect-video object-cover" />
-                                                <div className="absolute bottom-1 right-1 bg-black/60 text-white text-[9px] px-1 rounded">Webcam</div>
-                                            </div>
-                                            {/* Show Screen if available */}
-                                            {v.screenImage ? (
-                                                <div className="relative">
-                                                    <img src={v.screenImage} alt="Screen" className="w-full rounded bg-gray-100 border border-gray-100 aspect-video object-cover" />
-                                                    <div className="absolute bottom-1 right-1 bg-black/60 text-white text-[9px] px-1 rounded">Screen</div>
-                                                </div>
-                                            ) : (
-                                                <div className="bg-gray-100 rounded flex items-center justify-center text-[10px] text-gray-400">
-                                                    No Screen
-                                                </div>
-                                            )}
-                                        </div>
+                    ) : (
+                        <div className="space-y-3">
+                            {violations.map(v => (
+                                <div key={v.id} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                                    <div className="bg-red-50 px-2 py-1 border-b border-red-100 flex justify-between items-center">
+                                        <span className="text-[9px] font-bold text-red-700 uppercase">
+                                            {(() => {
+                                                switch (v.type) {
+                                                    case 'TAB_FOCUS_LOST': return 'Tab Focus Lost';
+                                                    case 'FACE_MISSING': return 'Face Missing';
+                                                    case 'MULTIPLE_FACES': return 'Multiple Faces';
+                                                    case 'LOW_LIGHT': return 'Low Light';
+                                                    case 'SCREEN_SHARE_STOPPED': return 'Screen Share Stopped';
+                                                    default: return v.type.replace(/_/g, ' ');
+                                                }
+                                            })()}
+                                        </span>
+                                        <span className="text-[9px] text-red-400 font-mono">{v.timestamp}</span>
                                     </div>
-                                ))}
+                                    <div className="p-1.5 flex gap-1.5">
+                                        <img src={v.image} alt="User" className="w-1/2 rounded bg-black aspect-video object-cover" />
+                                        {v.screenImage ? (
+                                            <img src={v.screenImage} alt="Screen" className="w-1/2 rounded bg-gray-100 border border-gray-100 aspect-video object-cover" />
+                                        ) : (
+                                            <div className="w-1/2 bg-gray-100 rounded flex items-center justify-center text-[8px] text-gray-400 aspect-video">
+                                                No Screen
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                {violations.length === 0 ? (
+                    <div className="h-32 flex flex-col items-center justify-center text-gray-400 border-2 border-dashed border-gray-200 rounded-lg">
+                        <span className="text-2xl mb-1">🛡️</span>
+                        <span className="text-xs">No violations detected</span>
+                    </div>
+                ) : (
+                    <div className="space-y-4">
+                        {violations.map(v => (
+                            <div key={v.id} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden group hover:border-red-300 transition-colors">
+                                <div className="bg-red-50 px-3 py-1.5 border-b border-red-100 flex justify-between items-center">
+                                    <span className="text-[10px] font-bold text-red-700 uppercase tracking-wide">
+                                        {v.type === 'TAB_SWITCH' ? 'Tab Switch' : v.type.replace('_', ' ')}
+                                    </span>
+                                    <span className="text-[10px] text-red-400 font-mono">{v.timestamp}</span>
+                                </div>
+                                <div className="p-2 grid grid-cols-2 gap-2">
+                                    {/* Always show User Image */}
+                                    <div className="relative">
+                                        <img src={v.image} alt="User" className="w-full rounded bg-black aspect-video object-cover" />
+                                        <div className="absolute bottom-1 right-1 bg-black/60 text-white text-[9px] px-1 rounded">Webcam</div>
+                                    </div>
+                                    {/* Show Screen if available */}
+                                    {v.screenImage ? (
+                                        <div className="relative">
+                                            <img src={v.screenImage} alt="Screen" className="w-full rounded bg-gray-100 border border-gray-100 aspect-video object-cover" />
+                                            <div className="absolute bottom-1 right-1 bg-black/60 text-white text-[9px] px-1 rounded">Screen</div>
+                                        </div>
+                                    ) : (
+                                        <div className="bg-gray-100 rounded flex items-center justify-center text-[10px] text-gray-400">
+                                            No Screen
+                                        </div>
+                                    )}
+                                </div>
                             </div>
-                        )}
+                        ))}
                     </div>
-                </div>
-            </main>
+                )}
+            </div>
+        </div >
+            </main >
 
-            {/* Fullscreen Violation Modal */}
-            {!isFullscreen && (
-                <div className="fixed inset-0 z-50 bg-white/50 backdrop-blur-md flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border border-red-100">
-                        <div className="text-6xl mb-4">⚠️</div>
-                        <h2 className="text-2xl font-bold text-gray-800 mb-2">Fullscreen Required</h2>
-                        <p className="text-gray-600 mb-6">Permission to continue the exam is paused. Please return to full screen mode immediately.</p>
-                        <button
-                            onClick={enterFullscreen}
-                            className="w-full py-3 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 transition-colors shadow-lg"
-                        >
-                            Return to Full Screen
-                        </button>
-                    </div>
+        {/* Fullscreen Violation Modal */ }
+    {
+        !isFullscreen && (
+            <div className="fixed inset-0 z-50 bg-white/50 backdrop-blur-md flex items-center justify-center p-4">
+                <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border border-red-100">
+                    <div className="text-6xl mb-4">⚠️</div>
+                    <h2 className="text-2xl font-bold text-gray-800 mb-2">Fullscreen Required</h2>
+                    <p className="text-gray-600 mb-6">Permission to continue the exam is paused. Please return to full screen mode immediately.</p>
+                    <button
+                        onClick={enterFullscreen}
+                        className="w-full py-3 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 transition-colors shadow-lg"
+                    >
+                        Return to Full Screen
+                    </button>
                 </div>
-            )}
+            </div>
+        )
+    }
 
-            {/* Screen Share Violation Modal */}
-            {isFullscreen && !screenShare.isSharing && (
-                <div className="fixed inset-0 z-50 bg-white/50 backdrop-blur-md flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border border-orange-100">
-                        <div className="text-6xl mb-4">🖥️</div>
-                        <h2 className="text-2xl font-bold text-gray-800 mb-2">Screen Share Stopped</h2>
-                        <p className="text-gray-600 mb-6">You must share your entire screen to continue the exam.</p>
-                        <button
-                            onClick={screenShare.startScreenShare}
-                            className="w-full py-3 bg-orange-600 text-white rounded-lg font-bold hover:bg-orange-700 transition-colors shadow-lg"
-                        >
-                            Share Entire Screen
-                        </button>
-                    </div>
+    {/* Screen Share Violation Modal */ }
+    {
+        isFullscreen && !screenShare.isSharing && (
+            <div className="fixed inset-0 z-50 bg-white/50 backdrop-blur-md flex items-center justify-center p-4">
+                <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border border-orange-100">
+                    <div className="text-6xl mb-4">🖥️</div>
+                    <h2 className="text-2xl font-bold text-gray-800 mb-2">Screen Share Stopped</h2>
+                    <p className="text-gray-600 mb-6">You must share your entire screen to continue the exam.</p>
+                    <button
+                        onClick={screenShare.startScreenShare}
+                        className="w-full py-3 bg-orange-600 text-white rounded-lg font-bold hover:bg-orange-700 transition-colors shadow-lg"
+                    >
+                        Share Entire Screen
+                    </button>
                 </div>
-            )}
-            {/* Face Visibility Warning Modal (Blocking + Manual Dismiss) */}
-            {faceModal && (
-                <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border-4 border-red-500 animate-pulse-slow">
-                        <div className="text-6xl mb-4">🚫</div>
-                        <h2 className="text-2xl font-bold text-red-600 mb-2">Face Not Visible</h2>
-                        <p className="text-gray-700 font-medium mb-6">
-                            You have been away from the camera for more than 5 seconds.
-                            <br /><br />
-                            We have recorded this incident. Please stay in the frame.
-                        </p>
-                        <button
-                            onClick={() => setFaceModal(false)}
-                            className="bg-red-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-red-700 transition-transform transform active:scale-95 shadow-lg"
-                        >
-                            I'm Back, Continue Exam
-                        </button>
-                    </div>
+            </div>
+        )
+    }
+    {/* Face Visibility Warning Modal (Blocking + Manual Dismiss) */ }
+    {
+        faceModal && (
+            <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+                <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border-4 border-red-500 animate-pulse-slow">
+                    <div className="text-6xl mb-4">🚫</div>
+                    <h2 className="text-2xl font-bold text-red-600 mb-2">Face Not Visible</h2>
+                    <p className="text-gray-700 font-medium mb-6">
+                        You have been away from the camera for more than 5 seconds.
+                        <br /><br />
+                        We have recorded this incident. Please stay in the frame.
+                    </p>
+                    <button
+                        onClick={() => setFaceModal(false)}
+                        className="bg-red-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-red-700 transition-transform transform active:scale-95 shadow-lg"
+                    >
+                        I'm Back, Continue Exam
+                    </button>
                 </div>
-            )}
+            </div>
+        )
+    }
 
-            {/* Multiple Faces Warning Modal (Blocking + Manual Dismiss) */}
-            {multipleModal && (
-                <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border-4 border-orange-500 animate-pulse-slow">
-                        <div className="text-6xl mb-4">👥</div>
-                        <h2 className="text-2xl font-bold text-orange-600 mb-2">Multiple Faces Detected</h2>
-                        <p className="text-gray-700 font-medium mb-6">
-                            We detected multiple people in your camera feed.
-                            <br /><br />
-                            This is a strict violation. Ensure you are alone.
-                        </p>
-                        <button
-                            onClick={() => setMultipleModal(false)}
-                            className="bg-orange-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-orange-700 transition-transform transform active:scale-95 shadow-lg"
-                        >
-                            I Understand, Continue
-                        </button>
-                    </div>
+    {/* Multiple Faces Warning Modal (Blocking + Manual Dismiss) */ }
+    {
+        multipleModal && (
+            <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+                <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border-4 border-orange-500 animate-pulse-slow">
+                    <div className="text-6xl mb-4">👥</div>
+                    <h2 className="text-2xl font-bold text-orange-600 mb-2">Multiple Faces Detected</h2>
+                    <p className="text-gray-700 font-medium mb-6">
+                        We detected multiple people in your camera feed.
+                        <br /><br />
+                        This is a strict violation. Ensure you are alone.
+                    </p>
+                    <button
+                        onClick={() => setMultipleModal(false)}
+                        className="bg-orange-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-orange-700 transition-transform transform active:scale-95 shadow-lg"
+                    >
+                        I Understand, Continue
+                    </button>
                 </div>
-            )}
+            </div>
+        )
+    }
 
-            {/* Tab Focus Loss Warning Modal (Blocking + Manual Dismiss) */}
-            {focusModal && (
-                <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border-4 border-indigo-500 animate-pulse-slow">
-                        <div className="text-6xl mb-4">⚠️</div>
-                        <h2 className="text-2xl font-bold text-indigo-600 mb-2">Focus Lost!</h2>
-                        <p className="text-gray-700 font-medium mb-6">
-                            You switched tabs or minimized the browser window.
-                            <br /><br />
-                            This has been recorded as a violation. Please stay on this screen.
-                        </p>
-                        <button
-                            onClick={() => setFocusModal(false)}
-                            className="bg-indigo-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-indigo-700 transition-transform transform active:scale-95 shadow-lg"
-                        >
-                            I'm Back, Continue Exam
-                        </button>
-                    </div>
+    {/* Tab Focus Loss Warning Modal (Blocking + Manual Dismiss) */ }
+    {
+        focusModal && (
+            <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
+                <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border-4 border-indigo-500 animate-pulse-slow">
+                    <div className="text-6xl mb-4">⚠️</div>
+                    <h2 className="text-2xl font-bold text-indigo-600 mb-2">Focus Lost!</h2>
+                    <p className="text-gray-700 font-medium mb-6">
+                        You switched tabs or minimized the browser window.
+                        <br /><br />
+                        This has been recorded as a violation. Please stay on this screen.
+                    </p>
+                    <button
+                        onClick={() => setFocusModal(false)}
+                        className="bg-indigo-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-indigo-700 transition-transform transform active:scale-95 shadow-lg"
+                    >
+                        I'm Back, Continue Exam
+                    </button>
                 </div>
-            )}
+            </div>
+        )
+    }
+
+    {/* Low Light Warning Modal (Blocking + Manual Dismiss) */ }
+    {
+        lightingModal && (
+            <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+                <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border-4 border-yellow-500 animate-pulse-slow">
+                    <div className="text-6xl mb-4">💡</div>
+                    <h2 className="text-2xl font-bold text-yellow-600 mb-2">Poor Lighting Detected</h2>
+                    <p className="text-gray-700 font-medium mb-6">
+                        The lighting in your room is too low for the proctoring AI.
+                        <br /><br />
+                        Please turn on a light or face a light source.
+                    </p>
+                    <button
+                        onClick={() => setLightingModal(false)}
+                        className="bg-yellow-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-yellow-700 transition-transform transform active:scale-95 shadow-lg"
+                    >
+                        I've Improved Lighting
+                    </button>
+                </div>
+            </div>
+        )
+    }
         </>
     );
 }

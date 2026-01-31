@@ -98,29 +98,33 @@ export async function sendHeartbeat(jwt) {
  * @returns {Promise<{acceptedEventIds: string[], rejectedEventIds: string[], reasonByEventId: Object}>}
  */
 export async function sendEventBatch(jwt, sessionId, events, thumbnails = []) {
+    const payload = {
+        sessionId,
+        events: events.map(e => ({
+            eventId: e.eventId,
+            type: e.type,
+            timestamp: e.timestamp,
+            confidence: e.confidence,
+            severity: e.severity,
+            details: e.details || {},
+        })),
+        thumbnails: thumbnails.map(t => ({
+            eventId: t.eventId,
+            contentType: 'image/jpeg',
+            dataBase64: t.dataBase64,
+            sizeBytes: t.sizeBytes,
+        })),
+    };
+
+    console.log('Batch API Payload:', JSON.stringify(payload, null, 2));
+
     const resp = await fetch(`${API_BASE}/proctoring/events/batch`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${jwt}`,
         },
-        body: JSON.stringify({
-            sessionId,
-            events: events.map(e => ({
-                eventId: e.eventId,
-                type: e.type,
-                timestamp: e.timestamp,
-                confidence: e.confidence,
-                severity: e.severity,
-                details: e.details || {},
-            })),
-            thumbnails: thumbnails.map(t => ({
-                eventId: t.eventId,
-                contentType: 'image/jpeg',
-                dataBase64: t.dataBase64,
-                sizeBytes: t.sizeBytes,
-            })),
-        }),
+        body: JSON.stringify(payload),
     });
 
     if (!resp.ok) {

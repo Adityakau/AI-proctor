@@ -105,27 +105,10 @@ export default function Home() {
               {webcam.error && <div className="text-red-500 text-xs mt-2">{webcam.error}</div>}
             </div>
 
-            {/* Step 2: Full Screen */}
-            <div className={`p-4 rounded-lg border-2 ${isFullscreen ? 'border-green-500 bg-green-50' : 'border-gray-200'}`}>
-              <div className="flex justify-between items-center mb-2">
-                <h3 className="font-bold">2. Full Screen Mode</h3>
-                {isFullscreen && <span className="text-green-600 font-bold">✓ Ready</span>}
-              </div>
-              <p className="text-sm text-gray-600 mb-3">The exam must be taken in full screen mode.</p>
-              {!isFullscreen && (
-                <button
-                  onClick={enterFullscreen}
-                  className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-                >
-                  Enter Full Screen
-                </button>
-              )}
-            </div>
-
-            {/* Step 3: Screen Share */}
+            {/* Step 2: Screen Share */}
             <div className={`p-4 rounded-lg border-2 ${screenShare.isSharing ? 'border-green-500 bg-green-50' : 'border-gray-200'}`}>
               <div className="flex justify-between items-center mb-2">
-                <h3 className="font-bold">3. Share Entire Screen</h3>
+                <h3 className="font-bold">2. Share Entire Screen</h3>
                 {screenShare.isSharing && <span className="text-green-600 font-bold">✓ Ready</span>}
               </div>
               <p className="text-sm text-gray-600 mb-3">
@@ -148,6 +131,23 @@ export default function Home() {
                 </button>
               )}
               {screenShare.error && <div className="text-red-500 text-xs mt-2 font-bold">{screenShare.error}</div>}
+            </div>
+
+            {/* Step 3: Full Screen */}
+            <div className={`p-4 rounded-lg border-2 ${isFullscreen ? 'border-green-500 bg-green-50' : 'border-gray-200'}`}>
+              <div className="flex justify-between items-center mb-2">
+                <h3 className="font-bold">3. Full Screen Mode</h3>
+                {isFullscreen && <span className="text-green-600 font-bold">✓ Ready</span>}
+              </div>
+              <p className="text-sm text-gray-600 mb-3">The exam must be taken in full screen mode.</p>
+              {!isFullscreen && (
+                <button
+                  onClick={enterFullscreen}
+                  className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                >
+                  Enter Full Screen
+                </button>
+              )}
             </div>
 
             {/* Start Button */}
