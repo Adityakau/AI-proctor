@@ -1,8 +1,11 @@
 /**
- * Exam Dashboard Page
+ * Exam Page - Production-Ready Proctoring
  * 
- * Active proctoring environment.
- * Consumes global media streams from ProctoringContext.
+ * Active proctoring environment with:
+ * - Hysteresis-based detection (no single-frame triggers)
+ * - Visibility-aware evidence capture
+ * - Rate-limited event emission
+ * - Clean UX (no dev controls)
  */
 
 import { useCallback, useState, useEffect, useRef } from 'react';
@@ -11,16 +14,20 @@ import { useRouter } from 'next/router';
 import { useProctoring } from '../context/ProctoringProvider';
 import { useFrameAnalyzer } from '../hooks/useFrameAnalyzer';
 import { useFullscreen } from '../hooks/useFullscreen';
+import { getEvidenceScheduler, destroyEvidenceScheduler } from '../lib/evidenceScheduler';
 import QuestionCard from '../components/QuestionCard';
 import ProctoringStatusIcons from '../components/ProctoringStatusIcons';
+
+// Debug mode via environment variable
+const DEBUG_MODE = process.env.NEXT_PUBLIC_PROCTOR_DEBUG === 'true';
 
 export default function Exam() {
     const router = useRouter();
     const { webcam, screenShare, proctoring, windowFocus, eventBatcher, session } = useProctoring();
     const { isFullscreen, enterFullscreen } = useFullscreen();
     const {
-        flags, messageLog, analysisEnabled, disableReason, lastProcessingTime,
-        updateFromAnalysis, getConsecutiveMissing, addFlag, removeFlag
+        flags, messageLog, analysisEnabled, lastProcessingTime,
+        updateFromAnalysis, getConsecutiveMissing, consumePendingEvents, addFlag, removeFlag
     } = proctoring;
 
     const videoRef = useRef(null);
@@ -28,8 +35,16 @@ export default function Exam() {
     const [modelLoading, setModelLoading] = useState(true);
     const [violations, setViolations] = useState([]);
 
-    // Track previous flags to trigger new violation captures
-    const prevFlagsRef = useRef({});
+    // Evidence scheduler ref
+    const schedulerRef = useRef(null);
+
+    // Initialize evidence scheduler
+    useEffect(() => {
+        schedulerRef.current = getEvidenceScheduler();
+        return () => {
+            destroyEvidenceScheduler();
+        };
+    }, []);
 
     // 1. Safety Check: If no camera, redirect to system check
     useEffect(() => {
@@ -51,8 +66,7 @@ export default function Exam() {
         }
     }, [screenShare.stream]);
 
-    // 3. Load Violations (Background Functionality only ?)
-    // User requested to remove recorded incidents component, but we keep logic just in case
+    // 3. Load stored violations on mount
     useEffect(() => {
         try {
             const stored = localStorage.getItem('proctoring_violations');
@@ -62,65 +76,94 @@ export default function Exam() {
         }
     }, []);
 
-    // 4. Capture Violation Helper - Now sends to backend via eventBatcher
-    const captureViolation = useCallback((type) => {
-        if (!videoRef.current) return;
+    // 4. Evidence capture using scheduler (visibility-aware, rate-limited)
+    const captureEvidence = useCallback((type, videoElement = null) => {
+        if (!schedulerRef.current) return;
+
+        const targetVideo = videoElement || videoRef.current;
+        if (!targetVideo) {
+            // No video, still send event without thumbnail
+            eventBatcher.addEvent(type, 0.8, {}, null);
+            return;
+        }
+
+        // Confidence map
+        const confidenceMap = {
+            MULTI_PERSON: 0.95,
+            FACE_MISSING: 0.90,
+            TAB_SWITCH: 0.99,
+            LOW_LIGHT: 0.70,
+            LOOK_AWAY: 0.85,
+            CAMERA_BLOCKED: 0.95,
+        };
+
+        schedulerRef.current.queue(
+            type,
+            targetVideo,
+            (thumbnailBase64) => {
+                // Send to backend
+                const eventId = eventBatcher.addEvent(
+                    type,
+                    confidenceMap[type] || 0.8,
+                    {},
+                    thumbnailBase64
+                );
+
+                // Update local violations for UI
+                if (thumbnailBase64) {
+                    const newViolation = {
+                        id: Date.now(),
+                        timestamp: new Date().toLocaleTimeString(),
+                        type,
+                        eventId,
+                        image: `data:image/jpeg;base64,${thumbnailBase64}`,
+                    };
+
+                    setViolations(prev => {
+                        const updated = [newViolation, ...prev].slice(0, 5);
+                        localStorage.setItem('proctoring_violations', JSON.stringify(updated));
+                        return updated;
+                    });
+                }
+            },
+            { allowWithoutSnapshot: true }
+        );
+    }, [eventBatcher]);
+
+    const clearViolations = useCallback(() => {
+        setViolations([]);
+        localStorage.removeItem('proctoring_violations');
+    }, []);
+
+    // 5. Tab Focus Monitoring - Capture when LEAVING to get screenshot of other tab
+    const tabSwitchCooldownRef = useRef(0);
+    const TAB_SWITCH_COOLDOWN_MS = 10000; // 10s cooldown
+
+    // Direct capture function for TAB_SWITCH - Higher quality: 320x180 at 0.75
+    const captureTabSwitch = useCallback((videoElement) => {
+        if (!videoElement || videoElement.readyState < 2) {
+            console.warn('[TabSwitch] Video not ready for capture');
+            eventBatcher.addEvent('TAB_SWITCH', 0.99, {}, null);
+            return;
+        }
 
         try {
-            // Capture webcam image (for UI display)
-            let webcamImage = null;
-            let thumbnailBase64 = null;
+            const canvas = document.createElement('canvas');
+            canvas.width = 320;   // Higher resolution
+            canvas.height = 180;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(videoElement, 0, 0, 320, 180);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.75);  // Better quality
+            const thumbnailBase64 = dataUrl.split(',')[1];
 
-            if (webcam.isActive && videoRef.current) {
-                const canvas = document.createElement('canvas');
-                canvas.width = 320;
-                canvas.height = 240;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-                webcamImage = canvas.toDataURL('image/jpeg', 0.6);
-                thumbnailBase64 = webcamImage.split(',')[1]; // Raw base64 for backend
-            }
+            const eventId = eventBatcher.addEvent('TAB_SWITCH', 0.99, {}, thumbnailBase64);
 
-            // Capture screen image for TAB_SWITCH
-            let screenImage = null;
-            if (type === 'TAB_SWITCH' && screenShare.isSharing && screenVideoRef.current) {
-                const canvas = document.createElement('canvas');
-                const w = Math.min(screenVideoRef.current.videoWidth || 640, 640);
-                const h = Math.min(screenVideoRef.current.videoHeight || 360, 360);
-                canvas.width = w;
-                canvas.height = h;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(screenVideoRef.current, 0, 0, w, h);
-                screenImage = canvas.toDataURL('image/jpeg', 0.6);
-                // For TAB_SWITCH, send screen image to backend instead of webcam
-                thumbnailBase64 = screenImage.split(',')[1];
-            }
-
-            // Determine confidence based on type
-            const confidenceMap = {
-                MULTI_PERSON: 0.95,
-                FACE_MISSING: 0.90,
-                TAB_SWITCH: 0.99,
-                LOW_LIGHT: 0.70,
-                LOOK_AWAY: 0.85,
-            };
-
-            // Send to backend via eventBatcher
-            const eventId = eventBatcher.addEvent(
-                type,
-                confidenceMap[type] || 0.8,
-                {},
-                thumbnailBase64
-            );
-
-            // Store for local UI display (with full dataURL images)
             const newViolation = {
                 id: Date.now(),
                 timestamp: new Date().toLocaleTimeString(),
-                type,
+                type: 'TAB_SWITCH',
                 eventId,
-                image: webcamImage,       // Full dataURL for UI
-                screenImage: screenImage, // Full dataURL for UI
+                image: dataUrl,
             };
 
             setViolations(prev => {
@@ -128,42 +171,40 @@ export default function Exam() {
                 localStorage.setItem('proctoring_violations', JSON.stringify(updated));
                 return updated;
             });
+
+            console.log('[TabSwitch] Screenshot captured successfully');
         } catch (err) {
-            console.error("Violation capture failed", err);
+            console.error('[TabSwitch] Capture failed:', err);
+            eventBatcher.addEvent('TAB_SWITCH', 0.99, {}, null);
         }
-    }, [webcam.isActive, screenShare.isSharing, eventBatcher]);
-
-    const clearViolations = useCallback(() => {
-        setViolations([]);
-        localStorage.removeItem('proctoring_violations');
-    }, []);
-
-    // 5. Monitoring Logic (Tab Focus) - Uses TAB_SWITCH
-    // Track last focus loss time to prevent duplicate captures
-    const lastFocusLossRef = useRef(null);
+    }, [eventBatcher]);
 
     useEffect(() => {
+        const now = Date.now();
+
         if (!windowFocus.isFocused) {
+            // Tab switched AWAY - capture the OTHER tab via screen share
             addFlag('TAB_SWITCH');
             setFocusModal(true);
 
-            // Capture violation after 500ms delay (to let screen share show the other tab)
-            // Use ref to track, so returning to tab doesn't cancel capture
-            const captureTime = Date.now();
-            lastFocusLossRef.current = captureTime;
+            // Check cooldown before capturing
+            if (now - tabSwitchCooldownRef.current >= TAB_SWITCH_COOLDOWN_MS) {
+                tabSwitchCooldownRef.current = now;
 
-            setTimeout(() => {
-                // Only capture if this is still the most recent focus loss
-                if (lastFocusLossRef.current === captureTime) {
-                    captureViolation('TAB_SWITCH');
-                }
-            }, 500);
+                // Capture with 500ms delay (screen share needs time to show other tab)
+                setTimeout(() => {
+                    const targetVideo = screenShare.isSharing && screenVideoRef.current
+                        ? screenVideoRef.current
+                        : videoRef.current;
+                    captureTabSwitch(targetVideo);
+                }, 500);
+            }
         } else {
             removeFlag('TAB_SWITCH');
         }
-    }, [windowFocus.isFocused, addFlag, removeFlag, captureViolation]);
+    }, [windowFocus.isFocused, addFlag, removeFlag, captureTabSwitch, screenShare.isSharing]);
 
-    // 6. Monitoring Logic (Screen Share)
+    // 6. Screen Share Monitoring
     useEffect(() => {
         if (screenShare.isSharing) {
             addFlag('SCREEN_SHARE_ACTIVE');
@@ -172,40 +213,39 @@ export default function Exam() {
         }
     }, [screenShare.isSharing, addFlag, removeFlag]);
 
-    // 7. Logic: Face Flags Capture
-    // Explicit Modals requiring interaction
+    // 7. Modal States
     const [faceModal, setFaceModal] = useState(false);
     const [multipleModal, setMultipleModal] = useState(false);
     const [focusModal, setFocusModal] = useState(false);
     const [lightingModal, setLightingModal] = useState(false);
+    const [blockedModal, setBlockedModal] = useState(false);
 
-    // Face Missing (5s timer)
+    // 8. Process pending anomaly events from detection state
     useEffect(() => {
-        let timer;
-        // Only run timer if flag is active AND modal is NOT ALREADY showing
-        if (flags.FACE_MISSING && !faceModal) {
-            timer = setTimeout(() => {
-                captureViolation('FACE_MISSING');
-                setFaceModal(true);
-            }, 5000);
+        const events = consumePendingEvents();
+
+        for (const event of events) {
+            if (event.shouldEmit) {
+                captureEvidence(event.type);
+
+                // Show appropriate modal
+                switch (event.type) {
+                    case 'MULTI_PERSON':
+                        if (!multipleModal) setMultipleModal(true);
+                        break;
+                    case 'FACE_MISSING':
+                        if (!faceModal && event.reason !== 'CAMERA_BLOCKED') setFaceModal(true);
+                        if (event.reason === 'CAMERA_BLOCKED' && !blockedModal) setBlockedModal(true);
+                        break;
+                    case 'LOW_LIGHT':
+                        if (!lightingModal) setLightingModal(true);
+                        break;
+                }
+            }
         }
-        return () => clearTimeout(timer);
-    }, [flags.FACE_MISSING, faceModal, captureViolation]);
+    }, [consumePendingEvents, captureEvidence, faceModal, multipleModal, lightingModal, blockedModal]);
 
-    // Multiple Faces (5s timer - updated)
-    useEffect(() => {
-        let timer;
-        if (flags.LOW_LIGHT && !lightingModal) {
-            timer = setTimeout(() => {
-                captureViolation('MULTIPLE_FACES');
-                setMultipleModal(true);
-            }, 5000);
-        }
-        return () => clearTimeout(timer);
-    }, [flags.LOW_LIGHT, lightingModal, captureViolation]);
-
-
-    // 8. Frame Analysis
+    // 9. Frame Analysis
     const handleAnalysisResult = useCallback((results) => {
         setModelLoading(false);
         updateFromAnalysis(results);
@@ -225,11 +265,10 @@ export default function Exam() {
         <>
             <Head>
                 <title>Exam In Progress</title>
-                {/* Ensure Material Icons are available for the status tool */}
                 <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
             </Head>
 
-            {/* Hidden Video Elements for Logic */}
+            {/* Hidden Video Elements for Detection */}
             <div className="fixed top-0 left-0 w-1 h-1 opacity-0 pointer-events-none overflow-hidden">
                 <video
                     ref={videoRef}
@@ -249,11 +288,22 @@ export default function Exam() {
 
             <main className="min-h-screen bg-gray-50 flex flex-col font-sans">
 
-                {/* Top Subject Bar */}
+                {/* Top Bar */}
                 <div className="bg-white border-b border-gray-200 px-8 py-4 flex items-center justify-between">
                     <button className="bg-blue-400 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-blue-500 transition-colors">
                         Subject 1
                     </button>
+
+                    {/* Proctoring Status (compact) */}
+                    <div className="flex items-center gap-4">
+                        {modelLoading && (
+                            <span className="text-xs text-gray-400 animate-pulse">Loading AI...</span>
+                        )}
+                        {!modelLoading && (
+                            <span className="text-xs text-green-600 font-medium">✓ Proctoring Active</span>
+                        )}
+                    </div>
+
                     {/* End Test Button */}
                     <button
                         onClick={async () => {
@@ -279,7 +329,7 @@ export default function Exam() {
                     {/* Right: Sidebar */}
                     <div className="w-80 flex flex-col gap-6">
 
-                        {/* 1. Status Icons (Proctoring) */}
+                        {/* Status Icons */}
                         <div className="flex justify-end">
                             <ProctoringStatusIcons
                                 flags={flags}
@@ -287,7 +337,7 @@ export default function Exam() {
                             />
                         </div>
 
-                        {/* 2. Controls */}
+                        {/* Controls */}
                         <div className="flex gap-2">
                             <button className="flex-1 bg-white border border-gray-200 py-2 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50">
                                 Instructions
@@ -299,11 +349,10 @@ export default function Exam() {
                             </div>
                         </div>
 
-                        {/* 3. Question Palette */}
+                        {/* Question Palette */}
                         <div className="bg-blue-50/50 rounded-xl p-4">
                             <h3 className="text-blue-400 font-bold mb-4 text-sm">Subject 1</h3>
                             <div className="grid grid-cols-6 gap-2">
-                                {/* Dummy Grid 1-30 */}
                                 {Array.from({ length: 30 }, (_, i) => i + 1).map(num => (
                                     <button
                                         key={num}
@@ -318,7 +367,7 @@ export default function Exam() {
                             </div>
                         </div>
 
-                        {/* 4. Violation Gallery (Restored) */}
+                        {/* Incident Gallery */}
                         <div className="flex-1 overflow-y-auto bg-gray-50/50 rounded-xl p-4 border border-gray-100">
                             <div className="flex justify-between items-center mb-3">
                                 <h3 className="font-semibold text-gray-700 text-xs flex items-center gap-2">
@@ -345,33 +394,28 @@ export default function Exam() {
                                         <div key={v.id} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
                                             <div className="bg-red-50 px-2 py-1 border-b border-red-100 flex justify-between items-center">
                                                 <span className="text-[9px] font-bold text-red-700 uppercase">
-                                                    {(() => {
-                                                        switch (v.type) {
-                                                            case 'TAB_FOCUS_LOST': return 'Tab Focus Lost';
-                                                            case 'FACE_MISSING': return 'Face Missing';
-                                                            case 'MULTIPLE_FACES': return 'Multiple Faces';
-                                                            case 'SCREEN_SHARE_STOPPED': return 'Screen Share Stopped';
-                                                            default: return v.type.replace(/_/g, ' ');
-                                                        }
-                                                    })()}
+                                                    {v.type.replace(/_/g, ' ')}
                                                 </span>
                                                 <span className="text-[9px] text-red-400 font-mono">{v.timestamp}</span>
                                             </div>
-                                            <div className="p-1.5 flex gap-1.5">
-                                                <img src={v.image} alt="User" className="w-1/2 rounded bg-black aspect-video object-cover" />
-                                                {v.screenImage ? (
-                                                    <img src={v.screenImage} alt="Screen" className="w-1/2 rounded bg-gray-100 border border-gray-100 aspect-video object-cover" />
-                                                ) : (
-                                                    <div className="w-1/2 bg-gray-100 rounded flex items-center justify-center text-[8px] text-gray-400 aspect-video">
-                                                        No Screen
-                                                    </div>
-                                                )}
-                                            </div>
+                                            {v.image && (
+                                                <div className="p-1.5">
+                                                    <img src={v.image} alt="Evidence" className="w-full rounded bg-black aspect-video object-cover" />
+                                                </div>
+                                            )}
                                         </div>
                                     ))}
                                 </div>
                             )}
                         </div>
+
+                        {/* Debug Overlay (only in debug mode) */}
+                        {DEBUG_MODE && (
+                            <div className="bg-gray-900 text-green-400 p-3 rounded-lg text-xs font-mono">
+                                <div>Processing: {lastProcessingTime?.toFixed(0)}ms</div>
+                                <div>Flags: {Object.keys(flags).join(', ') || 'none'}</div>
+                            </div>
+                        )}
                     </div>
 
                 </div>
@@ -380,13 +424,13 @@ export default function Exam() {
 
             {/* BLOCKING MODALS */}
 
-            {/* Fullscreen Violation Modal */}
+            {/* Fullscreen Required */}
             {!isFullscreen && (
                 <div className="fixed inset-0 z-50 bg-white/50 backdrop-blur-md flex items-center justify-center p-4">
                     <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border border-red-100">
                         <div className="text-6xl mb-4">⚠️</div>
                         <h2 className="text-2xl font-bold text-gray-800 mb-2">Fullscreen Required</h2>
-                        <p className="text-gray-600 mb-6">Permission to continue the exam is paused. Please return to full screen mode immediately.</p>
+                        <p className="text-gray-600 mb-6">Please return to full screen mode to continue the exam.</p>
                         <button
                             onClick={enterFullscreen}
                             className="w-full py-3 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 transition-colors shadow-lg"
@@ -397,13 +441,13 @@ export default function Exam() {
                 </div>
             )}
 
-            {/* Screen Share Violation Modal */}
+            {/* Screen Share Required */}
             {isFullscreen && !screenShare.isSharing && (
                 <div className="fixed inset-0 z-50 bg-white/50 backdrop-blur-md flex items-center justify-center p-4">
                     <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border border-orange-100">
                         <div className="text-6xl mb-4">🖥️</div>
-                        <h2 className="text-2xl font-bold text-gray-800 mb-2">Screen Share Stopped</h2>
-                        <p className="text-gray-600 mb-6">You must share your entire screen to continue the exam.</p>
+                        <h2 className="text-2xl font-bold text-gray-800 mb-2">Screen Share Required</h2>
+                        <p className="text-gray-600 mb-6">You must share your entire screen to continue.</p>
                         <button
                             onClick={screenShare.startScreenShare}
                             className="w-full py-3 bg-orange-600 text-white rounded-lg font-bold hover:bg-orange-700 transition-colors shadow-lg"
@@ -414,85 +458,96 @@ export default function Exam() {
                 </div>
             )}
 
-            {/* Face Visibility Warning Modal */}
+            {/* Face Not Visible */}
             {faceModal && (
                 <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border-4 border-red-500 animate-pulse-slow">
+                    <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border-4 border-red-500">
                         <div className="text-6xl mb-4">🚫</div>
                         <h2 className="text-2xl font-bold text-red-600 mb-2">Face Not Visible</h2>
-                        <p className="text-gray-700 font-medium mb-6">
-                            You have been away from the camera for more than 5 seconds.
-                            <br /><br />
-                            We have recorded this incident. Please stay in the frame.
+                        <p className="text-gray-700 mb-6">
+                            Your face has been out of frame. This incident has been recorded.
                         </p>
                         <button
                             onClick={() => setFaceModal(false)}
-                            className="bg-red-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-red-700 transition-transform transform active:scale-95 shadow-lg"
+                            className="bg-red-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-red-700 shadow-lg"
                         >
-                            I'm Back, Continue Exam
+                            Continue Exam
                         </button>
                     </div>
                 </div>
             )}
 
-            {/* Multiple Faces Warning Modal */}
+            {/* Multiple Faces */}
             {multipleModal && (
                 <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border-4 border-orange-500 animate-pulse-slow">
+                    <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border-4 border-orange-500">
                         <div className="text-6xl mb-4">👥</div>
-                        <h2 className="text-2xl font-bold text-orange-600 mb-2">Multiple Faces Detected</h2>
-                        <p className="text-gray-700 font-medium mb-6">
-                            We detected multiple people in your camera feed.
-                            <br /><br />
-                            This is a strict violation. Ensure you are alone.
+                        <h2 className="text-2xl font-bold text-orange-600 mb-2">Multiple People Detected</h2>
+                        <p className="text-gray-700 mb-6">
+                            We detected multiple people in your camera. Ensure you are alone.
                         </p>
                         <button
                             onClick={() => setMultipleModal(false)}
-                            className="bg-orange-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-orange-700 transition-transform transform active:scale-95 shadow-lg"
+                            className="bg-orange-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-orange-700 shadow-lg"
                         >
-                            I Understand, Continue
+                            I Understand
                         </button>
                     </div>
                 </div>
             )}
 
-            {/* Tab Focus Loss Warning Modal */}
+            {/* Tab Switch */}
             {focusModal && (
                 <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border-4 border-indigo-500 animate-pulse-slow">
+                    <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border-4 border-indigo-500">
                         <div className="text-6xl mb-4">⚠️</div>
-                        <h2 className="text-2xl font-bold text-indigo-600 mb-2">Focus Lost!</h2>
-                        <p className="text-gray-700 font-medium mb-6">
-                            You switched tabs or minimized the browser window.
-                            <br /><br />
-                            This has been recorded as a violation. Please stay on this screen.
+                        <h2 className="text-2xl font-bold text-indigo-600 mb-2">Focus Lost</h2>
+                        <p className="text-gray-700 mb-6">
+                            You switched tabs or windows. This has been recorded.
                         </p>
                         <button
                             onClick={() => setFocusModal(false)}
-                            className="bg-indigo-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-indigo-700 transition-transform transform active:scale-95 shadow-lg"
+                            className="bg-indigo-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-indigo-700 shadow-lg"
                         >
-                            I'm Back, Continue Exam
+                            Continue Exam
                         </button>
                     </div>
                 </div>
             )}
 
-            {/* Low Light Warning Modal */}
+            {/* Low Light */}
             {lightingModal && (
                 <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border-4 border-yellow-500 animate-pulse-slow">
+                    <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border-4 border-yellow-500">
                         <div className="text-6xl mb-4">💡</div>
-                        <h2 className="text-2xl font-bold text-yellow-600 mb-2">Poor Lighting Detected</h2>
-                        <p className="text-gray-700 font-medium mb-6">
-                            The lighting in your room is too low for the proctoring AI.
-                            <br /><br />
-                            Please turn on a light or face a light source.
+                        <h2 className="text-2xl font-bold text-yellow-600 mb-2">Poor Lighting</h2>
+                        <p className="text-gray-700 mb-6">
+                            The lighting is too low. Please improve your lighting conditions.
                         </p>
                         <button
                             onClick={() => setLightingModal(false)}
-                            className="bg-yellow-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-yellow-700 transition-transform transform active:scale-95 shadow-lg"
+                            className="bg-yellow-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-yellow-700 shadow-lg"
                         >
-                            I've Improved Lighting
+                            I've Fixed It
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Camera Blocked */}
+            {blockedModal && (
+                <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border-4 border-red-600">
+                        <div className="text-6xl mb-4">📷</div>
+                        <h2 className="text-2xl font-bold text-red-600 mb-2">Camera Blocked</h2>
+                        <p className="text-gray-700 mb-6">
+                            Your camera appears to be blocked or covered. Please uncover it.
+                        </p>
+                        <button
+                            onClick={() => setBlockedModal(false)}
+                            className="bg-red-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-red-700 shadow-lg"
+                        >
+                            Camera is Clear
                         </button>
                     </div>
                 </div>

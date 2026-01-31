@@ -45,7 +45,7 @@ async function handleInit() {
  * Perform analysis on frame data
  */
 async function handleAnalyze(payload) {
-    const { imageData, consecutiveMissing } = payload;
+    const { imageData: rawImageData, consecutiveMissing } = payload;
 
     if (!isModelLoaded) {
         self.postMessage({ type: 'ERROR', error: 'Model not loaded' });
@@ -55,9 +55,15 @@ async function handleAnalyze(payload) {
     const startTime = performance.now();
 
     try {
+        // Reconstruct ImageData from transferred buffer
+        // rawImageData contains: { data: Uint8ClampedArray, width, height }
+        const imageData = new ImageData(
+            new Uint8ClampedArray(rawImageData.data),
+            rawImageData.width,
+            rawImageData.height
+        );
+
         // Run face detection
-        // detectFaces expects HTMLCanvasElement | HTMLVideoElement | ImageData
-        // We pass ImageData received from main thread
         const faces = await detectFaces(imageData);
 
         // Run checks
@@ -71,17 +77,26 @@ async function handleAnalyze(payload) {
             rotationFlag = checkHeadRotation(faces[0]);
         }
 
+        // Calculate brightness stats for detection state
+        const brightnessStats = calculateBrightnessStats(imageData);
+
         const processingTime = performance.now() - startTime;
+
+        // Count confident faces
+        const confidentFaces = faces.filter(f => f.probability >= 0.8);
 
         // Post results back
         self.postMessage({
             type: 'ANALYSIS_COMPLETE',
             results: {
                 faces,
+                faceCount: confidentFaces.length,
                 faceFlag,
                 multipleFlag,
                 brightnessFlag,
                 rotationFlag,
+                brightness: brightnessStats.mean,
+                variance: brightnessStats.variance,
                 processingTime,
                 newConsecutiveMissing
             }
@@ -91,4 +106,30 @@ async function handleAnalyze(payload) {
         console.error('Analysis failed:', err);
         self.postMessage({ type: 'ERROR', error: err.message });
     }
+}
+
+/**
+ * Calculate brightness mean and variance for camera blocked detection
+ */
+function calculateBrightnessStats(imageData) {
+    const data = imageData.data;
+    let sum = 0;
+    let sumSq = 0;
+    let count = 0;
+
+    // Sample every 64th pixel for efficiency
+    for (let i = 0; i < data.length; i += 256) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
+        sum += brightness;
+        sumSq += brightness * brightness;
+        count++;
+    }
+
+    const mean = sum / count;
+    const variance = (sumSq / count) - (mean * mean);
+
+    return { mean, variance };
 }

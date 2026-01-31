@@ -11,7 +11,7 @@ import React from 'react';
 
 export default function ProctoringStatusIcons({ flags, screenShareActive }) {
     const isFaceMissing = flags.FACE_MISSING;
-    const isMultipleFaces = flags.MULTIPLE_FACES;
+    const isMultipleFaces = flags.MULTI_PERSON;
     const isLowLight = flags.LOW_LIGHT;
 
     // Status helpers

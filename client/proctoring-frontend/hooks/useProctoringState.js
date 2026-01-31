@@ -2,10 +2,11 @@
  * useProctoringState - State management for proctoring flags
  * 
  * Maintains current flags, message log, and analysis state.
- * Designed to minimize re-renders by batching state updates.
+ * Uses DetectionStateManager for hysteresis-based stabilization.
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { DetectionStateManager, resetDetectionStateManager } from '../lib/detectionState';
 
 // Maximum messages to keep in log (prevents memory growth)
 const MAX_LOG_ENTRIES = 10;
@@ -14,7 +15,7 @@ const MAX_LOG_ENTRIES = 10;
 export const PROCESSING_BUDGET_MS = 250;
 
 /**
- * @typedef {'FACE_OK' | 'FACE_MISSING' | 'MULTI_PERSON' | 'LOW_LIGHT' | 'LOOK_AWAY' | 'TAB_SWITCH' | 'SCREEN_SHARE_ACTIVE'} ProctoringFlag
+ * @typedef {'FACE_OK' | 'FACE_MISSING' | 'MULTI_PERSON' | 'LOW_LIGHT' | 'LOOK_AWAY' | 'TAB_SWITCH' | 'SCREEN_SHARE_ACTIVE' | 'CAMERA_BLOCKED'} ProctoringFlag
  */
 
 /**
@@ -22,6 +23,12 @@ export const PROCESSING_BUDGET_MS = 250;
  * @property {string} timestamp - ISO timestamp
  * @property {ProctoringFlag} flag - The flag that was set
  * @property {string} message - Human readable message
+ */
+
+/**
+ * @typedef {Object} AnomalyEvent
+ * @property {string} type - Anomaly type
+ * @property {boolean} shouldEmit - Whether to emit event to backend
  */
 
 /**
@@ -38,11 +45,25 @@ export function useProctoringState() {
     const [analysisEnabled, setAnalysisEnabled] = useState(true);
     const [disableReason, setDisableReason] = useState(null);
 
-    // Consecutive missed face counter
+    // Consecutive missed face counter (kept for worker compatibility)
     const consecutiveMissingRef = useRef(0);
 
     // Last processing time for display
     const [lastProcessingTime, setLastProcessingTime] = useState(0);
+
+    // Detection state manager for hysteresis
+    const detectionStateRef = useRef(null);
+
+    // Pending anomaly events to emit (for evidence capture)
+    const pendingEventsRef = useRef([]);
+
+    // Initialize detection state manager
+    useEffect(() => {
+        detectionStateRef.current = new DetectionStateManager();
+        return () => {
+            resetDetectionStateManager();
+        };
+    }, []);
 
     /**
      * Human-readable messages for each flag
@@ -54,7 +75,8 @@ export function useProctoringState() {
         LOW_LIGHT: 'Warning: Low light conditions',
         LOOK_AWAY: 'Warning: Looking away from screen',
         TAB_SWITCH: 'Warning: Tab/window switched',
-        SCREEN_SHARE_ACTIVE: 'Info: Screen share active'
+        SCREEN_SHARE_ACTIVE: 'Info: Screen share active',
+        CAMERA_BLOCKED: 'Error: Camera appears blocked'
     };
 
     /**
@@ -93,22 +115,23 @@ export function useProctoringState() {
     }, []);
 
     /**
-     * Update flags based on analysis results
-     * Call this with each analysis cycle's results
-     * 
-     * @param {Object} results - Analysis results
-     * @param {Array} results.faces - Detected faces
-     * @param {string|null} results.faceFlag - Result from checkFacePresence
-     * @param {string|null} results.multipleFlag - Result from checkMultipleFaces  
-     * @param {string|null} results.brightnessFlag - Result from checkBrightness
-     * @param {number} results.processingTime - Time taken in ms
-     * @param {number} results.newConsecutiveMissing - Updated counter
+     * Get pending anomaly events (consumed after read)
+     */
+    const consumePendingEvents = useCallback(() => {
+        const events = [...pendingEventsRef.current];
+        pendingEventsRef.current = [];
+        return events;
+    }, []);
+
+    /**
+     * Update flags based on analysis results with hysteresis
+     * @param {Object} results - Analysis results from worker
      */
     const updateFromAnalysis = useCallback((results) => {
         const {
-            faceFlag,
-            multipleFlag,
-            brightnessFlag,
+            faceCount,
+            brightness,
+            variance,
             rotationFlag,
             processingTime,
             newConsecutiveMissing
@@ -117,52 +140,82 @@ export function useProctoringState() {
         // Update processing time display
         setLastProcessingTime(processingTime);
 
-        // Update consecutive missing counter
+        // Update consecutive missing counter (for legacy compatibility)
         consecutiveMissingRef.current = newConsecutiveMissing;
 
-        // Check processing budget
-        // NOTE: With Web Worker, high processing time doesn't block UI.
-        // We log it but don't strictly disable analysis anymore unless it's extreme (e.g. > 1000ms)
-        if (processingTime > 1000) {
-            // Optional: could still track extreme lags
-        }
+        if (!detectionStateRef.current) return;
 
-        // Original strict safety check disabled as per user request to not stop analysis
-        /*
-        if (processingTime > PROCESSING_BUDGET_MS) {
-            console.warn(`Frame processing took ${processingTime}ms (budget: ${PROCESSING_BUDGET_MS}ms)`);
-        }
-        */
+        const detector = detectionStateRef.current;
 
-        // Handle face status
-        if (faceFlag === 'FACE_OK') {
-            addFlag('FACE_OK');
-            removeFlag('FACE_MISSING');
-        } else if (faceFlag === 'FACE_MISSING') {
-            addFlag('FACE_MISSING');
-            removeFlag('FACE_OK');
-        }
-
-        // Handle multiple faces
-        if (multipleFlag === 'MULTI_PERSON') {
+        // --- Multi-person detection with hysteresis ---
+        // toggledOn = show indicator (1s), shouldEmit = screenshot (5s)
+        const multiResult = detector.updateMultiPerson(faceCount);
+        if (multiResult.toggledOn) {
             addFlag('MULTI_PERSON');
-        } else {
+        }
+        if (multiResult.shouldEmit) {
+            pendingEventsRef.current.push({ type: 'MULTI_PERSON', shouldEmit: true });
+        }
+        if (multiResult.toggledOff) {
             removeFlag('MULTI_PERSON');
         }
 
-        // Handle brightness
-        if (brightnessFlag === 'LOW_LIGHT') {
-            addFlag('LOW_LIGHT');
-        } else {
-            removeFlag('LOW_LIGHT');
+        // --- Face missing detection with hysteresis ---
+        const faceResult = detector.updateFaceMissing(faceCount);
+        if (faceResult.triggered) {
+            addFlag('FACE_MISSING');
+            removeFlag('FACE_OK');
+            if (faceResult.shouldEmit) {
+                pendingEventsRef.current.push({ type: 'FACE_MISSING', shouldEmit: true });
+            }
+        } else if (faceResult.cleared) {
+            removeFlag('FACE_MISSING');
+            addFlag('FACE_OK');
+        } else if (faceCount >= 1 && !detector.faceMissingActive) {
+            // Face present and not in missing state
+            addFlag('FACE_OK');
+            removeFlag('FACE_MISSING');
         }
 
-        // Handle head rotation (looking away)
-        if (rotationFlag === 'LOOK_AWAY') {
+        // --- Camera blocked detection (very dark + low variance) ---
+        if (typeof brightness === 'number' && typeof variance === 'number') {
+            const blockedResult = detector.updateCameraBlocked(brightness, variance);
+            if (blockedResult.triggered) {
+                addFlag('CAMERA_BLOCKED');
+                if (blockedResult.shouldEmit) {
+                    // Map to FACE_MISSING for backend compatibility
+                    pendingEventsRef.current.push({ type: 'FACE_MISSING', shouldEmit: true, reason: 'CAMERA_BLOCKED' });
+                }
+            } else if (blockedResult.cleared) {
+                removeFlag('CAMERA_BLOCKED');
+            }
+        }
+
+        // --- Low light detection with hysteresis ---
+        if (typeof brightness === 'number') {
+            const lightResult = detector.updateLowLight(brightness, 40);
+            if (lightResult.triggered) {
+                addFlag('LOW_LIGHT');
+                if (lightResult.shouldEmit) {
+                    pendingEventsRef.current.push({ type: 'LOW_LIGHT', shouldEmit: true });
+                }
+            } else if (lightResult.cleared) {
+                removeFlag('LOW_LIGHT');
+            }
+        }
+
+        // --- Look away detection with hysteresis ---
+        const isLookingAway = rotationFlag === 'LOOK_AWAY';
+        const lookResult = detector.updateLookAway(isLookingAway);
+        if (lookResult.triggered) {
             addFlag('LOOK_AWAY');
-        } else {
+            if (lookResult.shouldEmit) {
+                pendingEventsRef.current.push({ type: 'LOOK_AWAY', shouldEmit: true });
+            }
+        } else if (lookResult.cleared) {
             removeFlag('LOOK_AWAY');
         }
+
     }, [addFlag, removeFlag]);
 
     /**
@@ -181,8 +234,11 @@ export function useProctoringState() {
         setAnalysisEnabled(true);
         setDisableReason(null);
         consecutiveMissingRef.current = 0;
-        budgetOverrunCountRef.current = 0;
         setLastProcessingTime(0);
+        pendingEventsRef.current = [];
+        if (detectionStateRef.current) {
+            detectionStateRef.current.reset();
+        }
     }, []);
 
     return {
@@ -193,6 +249,7 @@ export function useProctoringState() {
         lastProcessingTime,
         updateFromAnalysis,
         getConsecutiveMissing,
+        consumePendingEvents,
         reset,
         addFlag,
         removeFlag
