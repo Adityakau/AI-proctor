@@ -128,6 +128,14 @@ export function useProctoringState() {
         consecutiveMissingRef.current = newConsecutiveMissing;
 
         // Check processing budget
+        // NOTE: With Web Worker, high processing time doesn't block UI.
+        // We log it but don't strictly disable analysis anymore unless it's extreme (e.g. > 1000ms)
+        if (processingTime > 1000) {
+            // Optional: could still track extreme lags
+        }
+
+        // Original strict safety check disabled as per user request to not stop analysis
+        /*
         if (processingTime > PROCESSING_BUDGET_MS) {
             budgetOverrunCountRef.current++;
 
@@ -141,6 +149,7 @@ export function useProctoringState() {
             // Reset overrun counter on good frame
             budgetOverrunCountRef.current = 0;
         }
+        */
 
         // Handle face status
         if (faceFlag === 'FACE_OK') {

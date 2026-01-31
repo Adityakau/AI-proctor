@@ -10,8 +10,9 @@ import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { useProctoring } from '../context/ProctoringProvider';
 import { useFrameAnalyzer } from '../hooks/useFrameAnalyzer';
-import StatusPanel from '../components/StatusPanel';
 import { useFullscreen } from '../hooks/useFullscreen';
+import QuestionCard from '../components/QuestionCard';
+import ProctoringStatusIcons from '../components/ProctoringStatusIcons';
 
 export default function Exam() {
     const router = useRouter();
@@ -50,7 +51,8 @@ export default function Exam() {
         }
     }, [screenShare.stream]);
 
-    // 3. Load Violations
+    // 3. Load Violations (Background Functionality only ?)
+    // User requested to remove recorded incidents component, but we keep logic just in case
     useEffect(() => {
         try {
             const stored = localStorage.getItem('proctoring_violations');
@@ -138,9 +140,6 @@ export default function Exam() {
     }, [screenShare.isSharing, addFlag, removeFlag]);
 
     // 7. Logic: Face Flags Capture
-    // 7. Logic: Face Flags Capture (10s Persistence)
-    // 7. Logic: Face Flags Capture & Warnings
-
     // Explicit Modals requiring interaction
     const [faceModal, setFaceModal] = useState(false);
     const [multipleModal, setMultipleModal] = useState(false);
@@ -159,14 +158,14 @@ export default function Exam() {
         return () => clearTimeout(timer);
     }, [flags.FACE_MISSING, faceModal, captureViolation]);
 
-    // Multiple Faces (10s timer)
+    // Multiple Faces (5s timer - updated)
     useEffect(() => {
         let timer;
         if (flags.MULTIPLE_FACES && !multipleModal) {
             timer = setTimeout(() => {
                 captureViolation('MULTIPLE_FACES');
                 setMultipleModal(true);
-            }, 10000);
+            }, 5000);
         }
         return () => clearTimeout(timer);
     }, [flags.MULTIPLE_FACES, multipleModal, captureViolation]);
@@ -191,111 +190,150 @@ export default function Exam() {
     return (
         <>
             <Head>
-                <title>Exam In Progress - Proctoring</title>
+                <title>Exam In Progress</title>
+                {/* Ensure Material Icons are available for the status tool */}
+                <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
             </Head>
 
-            {/* Split Screen Layout */}
-            <main className="flex h-screen bg-white overflow-hidden">
+            {/* Hidden Video Elements for Logic */}
+            <div className="fixed top-0 left-0 w-1 h-1 opacity-0 pointer-events-none overflow-hidden">
+                <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    width="320"
+                    height="240"
+                />
+                <video
+                    ref={screenVideoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                />
+            </div>
 
-                {/* LEFT COLUMN: Camera Feed (Dominant) */}
-                <div className="flex-1 flex flex-col items-center justify-center relative p-4 bg-white">
-                    <video
-                        ref={videoRef}
-                        autoPlay
-                        playsInline
-                        muted
-                        className="max-h-[80vh] max-w-4xl w-full rounded-lg shadow-2xl border border-gray-800"
-                        style={{ boxShadow: '0 0 50px rgba(0,0,0,0.5)' }}
-                    />
-                    <div className="absolute top-6 left-6 text-white/50 text-sm font-light">
-                        User Feed • Live
-                    </div>
+            <main className="min-h-screen bg-gray-50 flex flex-col font-sans">
 
-                    {/* Hidden Screen Video used for Capture (Must be in DOM/sized to play) */}
-                    <video
-                        ref={screenVideoRef}
-                        className="absolute top-0 left-0 w-px h-px opacity-0 pointer-events-none"
-                        autoPlay
-                        playsInline
-                        muted
-                    />
+                {/* Top Subject Bar */}
+                <div className="bg-white border-b border-gray-200 px-8 py-4 flex items-center">
+                    <button className="bg-blue-400 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-blue-500 transition-colors">
+                        Subject 1
+                    </button>
+                    {/* Add more subjects if needed */}
                 </div>
 
-                {/* RIGHT COLUMN: Dashboard Tools */}
-                <div className="w-96 bg-white border-l border-gray-200 flex flex-col shadow-xl z-10">
-                    <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-                        <h1 className="text-lg font-bold text-gray-800">Exam Monitor</h1>
-                        <span className="text-[10px] text-gray-400 font-mono">ID: 8X29-A1</span>
+                {/* Main Content Area */}
+                <div className="flex-1 flex p-6 gap-6 max-w-7xl mx-auto w-full">
+
+                    {/* Left: Question Area */}
+                    <div className="flex-1">
+                        <QuestionCard />
                     </div>
 
-                    {/* Status Panel (Top) */}
-                    <div className="p-4 border-b border-gray-100">
-                        <StatusPanel
-                            flags={flags}
-                            messageLog={messageLog}
-                            analysisEnabled={analysisEnabled}
-                            disableReason={disableReason}
-                            processingTime={lastProcessingTime}
-                            isModelLoading={modelLoading}
-                        />
-                    </div>
+                    {/* Right: Sidebar */}
+                    <div className="w-80 flex flex-col gap-6">
 
-                    {/* Violation Gallery (Remaining Height) */}
-                    <div className="flex-1 overflow-y-auto p-4 bg-gray-50/30">
-                        <div className="flex justify-between items-center mb-3">
-                            <h3 className="font-semibold text-gray-700 text-sm flex items-center gap-2">
-                                <span>Recorded Incidents</span>
-                                {violations.length > 0 && (
-                                    <span className="bg-red-100 text-red-600 text-[10px] px-1.5 py-0.5 rounded-full font-bold">{violations.length}</span>
-                                )}
-                            </h3>
-                            {violations.length > 0 && (
-                                <button onClick={clearViolations} className="text-[10px] text-gray-400 hover:text-red-500 uppercase tracking-wider font-medium">
-                                    Clear All
-                                </button>
-                            )}
+                        {/* 1. Status Icons (Proctoring) */}
+                        <div className="flex justify-end">
+                            <ProctoringStatusIcons
+                                flags={flags}
+                                screenShareActive={screenShare.isSharing}
+                            />
                         </div>
 
-                        {violations.length === 0 ? (
-                            <div className="h-32 flex flex-col items-center justify-center text-gray-400 border-2 border-dashed border-gray-200 rounded-lg">
-                                <span className="text-2xl mb-1">🛡️</span>
-                                <span className="text-xs">No violations detected</span>
+                        {/* 2. Controls */}
+                        <div className="flex gap-2">
+                            <button className="flex-1 bg-white border border-gray-200 py-2 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                                Instructions
+                            </button>
+                            <div className="relative">
+                                <button className="bg-white border border-gray-200 py-2 px-4 rounded-lg text-sm font-semibold text-gray-700 flex items-center gap-2 hover:bg-gray-50">
+                                    English <span>⌄</span>
+                                </button>
                             </div>
-                        ) : (
-                            <div className="space-y-4">
-                                {violations.map(v => (
-                                    <div key={v.id} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden group hover:border-red-300 transition-colors">
-                                        <div className="bg-red-50 px-3 py-1.5 border-b border-red-100 flex justify-between items-center">
-                                            <span className="text-[10px] font-bold text-red-700 uppercase tracking-wide">
-                                                {v.type === 'TAB_FOCUS_LOST' ? 'Focus Lost' : v.type.replace('_', ' ')}
-                                            </span>
-                                            <span className="text-[10px] text-red-400 font-mono">{v.timestamp}</span>
-                                        </div>
-                                        <div className="p-2 grid grid-cols-2 gap-2">
-                                            {/* Always show User Image */}
-                                            <div className="relative">
-                                                <img src={v.image} alt="User" className="w-full rounded bg-black aspect-video object-cover" />
-                                                <div className="absolute bottom-1 right-1 bg-black/60 text-white text-[9px] px-1 rounded">Webcam</div>
-                                            </div>
-                                            {/* Show Screen if available */}
-                                            {v.screenImage ? (
-                                                <div className="relative">
-                                                    <img src={v.screenImage} alt="Screen" className="w-full rounded bg-gray-100 border border-gray-100 aspect-video object-cover" />
-                                                    <div className="absolute bottom-1 right-1 bg-black/60 text-white text-[9px] px-1 rounded">Screen</div>
-                                                </div>
-                                            ) : (
-                                                <div className="bg-gray-100 rounded flex items-center justify-center text-[10px] text-gray-400">
-                                                    No Screen
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
+                        </div>
+
+                        {/* 3. Question Palette */}
+                        <div className="bg-blue-50/50 rounded-xl p-4">
+                            <h3 className="text-blue-400 font-bold mb-4 text-sm">Subject 1</h3>
+                            <div className="grid grid-cols-6 gap-2">
+                                {/* Dummy Grid 1-30 */}
+                                {Array.from({ length: 30 }, (_, i) => i + 1).map(num => (
+                                    <button
+                                        key={num}
+                                        className={`
+                                            w-8 h-8 rounded-lg text-xs font-bold flex items-center justify-center transition-colors
+                                            ${num === 1 ? 'bg-blue-500 text-white shadow-lg' : 'bg-white text-gray-600 border border-transparent hover:border-gray-300'}
+                                        `}
+                                    >
+                                        {num}
+                                    </button>
                                 ))}
                             </div>
-                        )}
+                        </div>
+
+                        {/* 4. Violation Gallery (Restored) */}
+                        <div className="flex-1 overflow-y-auto bg-gray-50/50 rounded-xl p-4 border border-gray-100">
+                            <div className="flex justify-between items-center mb-3">
+                                <h3 className="font-semibold text-gray-700 text-xs flex items-center gap-2">
+                                    <span>Incidents</span>
+                                    {violations.length > 0 && (
+                                        <span className="bg-red-100 text-red-600 text-[10px] px-1.5 py-0.5 rounded-full font-bold">{violations.length}</span>
+                                    )}
+                                </h3>
+                                {violations.length > 0 && (
+                                    <button onClick={clearViolations} className="text-[10px] text-gray-400 hover:text-red-500 uppercase tracking-wider font-medium">
+                                        Clear
+                                    </button>
+                                )}
+                            </div>
+
+                            {violations.length === 0 ? (
+                                <div className="h-20 flex flex-col items-center justify-center text-gray-400 border-2 border-dashed border-gray-200 rounded-lg">
+                                    <span className="text-xl mb-1">🛡️</span>
+                                    <span className="text-[10px]">Clean Record</span>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {violations.map(v => (
+                                        <div key={v.id} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                                            <div className="bg-red-50 px-2 py-1 border-b border-red-100 flex justify-between items-center">
+                                                <span className="text-[9px] font-bold text-red-700 uppercase">
+                                                    {(() => {
+                                                        switch (v.type) {
+                                                            case 'TAB_FOCUS_LOST': return 'Tab Focus Lost';
+                                                            case 'FACE_MISSING': return 'Face Missing';
+                                                            case 'MULTIPLE_FACES': return 'Multiple Faces';
+                                                            case 'SCREEN_SHARE_STOPPED': return 'Screen Share Stopped';
+                                                            default: return v.type.replace(/_/g, ' ');
+                                                        }
+                                                    })()}
+                                                </span>
+                                                <span className="text-[9px] text-red-400 font-mono">{v.timestamp}</span>
+                                            </div>
+                                            <div className="p-1.5 flex gap-1.5">
+                                                <img src={v.image} alt="User" className="w-1/2 rounded bg-black aspect-video object-cover" />
+                                                {v.screenImage ? (
+                                                    <img src={v.screenImage} alt="Screen" className="w-1/2 rounded bg-gray-100 border border-gray-100 aspect-video object-cover" />
+                                                ) : (
+                                                    <div className="w-1/2 bg-gray-100 rounded flex items-center justify-center text-[8px] text-gray-400 aspect-video">
+                                                        No Screen
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                     </div>
+
                 </div>
+
             </main>
+
+            {/* BLOCKING MODALS (Keep existing logic) */}
 
             {/* Fullscreen Violation Modal */}
             {!isFullscreen && (
@@ -330,6 +368,8 @@ export default function Exam() {
                     </div>
                 </div>
             )}
+
+            {/* Popups continue below... */}
             {/* Face Visibility Warning Modal (Blocking + Manual Dismiss) */}
             {faceModal && (
                 <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
