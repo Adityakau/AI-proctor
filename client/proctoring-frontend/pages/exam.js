@@ -16,7 +16,7 @@ import ProctoringStatusIcons from '../components/ProctoringStatusIcons';
 
 export default function Exam() {
     const router = useRouter();
-    const { webcam, screenShare, proctoring, windowFocus, eventBatcher } = useProctoring();
+    const { webcam, screenShare, proctoring, windowFocus, eventBatcher, session } = useProctoring();
     const { isFullscreen, enterFullscreen } = useFullscreen();
     const {
         flags, messageLog, analysisEnabled, disableReason, lastProcessingTime,
@@ -250,11 +250,22 @@ export default function Exam() {
             <main className="min-h-screen bg-gray-50 flex flex-col font-sans">
 
                 {/* Top Subject Bar */}
-                <div className="bg-white border-b border-gray-200 px-8 py-4 flex items-center">
+                <div className="bg-white border-b border-gray-200 px-8 py-4 flex items-center justify-between">
                     <button className="bg-blue-400 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-blue-500 transition-colors">
                         Subject 1
                     </button>
-                    {/* Add more subjects if needed */}
+                    {/* End Test Button */}
+                    <button
+                        onClick={async () => {
+                            if (session.sessionId) {
+                                await session.end();
+                                router.push(`/exam/${session.sessionId}/dashboard`);
+                            }
+                        }}
+                        className="bg-red-500 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-red-600 transition-colors"
+                    >
+                        End Test
+                    </button>
                 </div>
 
                 {/* Main Content Area */}

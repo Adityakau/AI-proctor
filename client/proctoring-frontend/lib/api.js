@@ -151,4 +151,22 @@ export async function fetchAlerts(jwt, sessionId) {
     return resp.json();
 }
 
+/**
+ * Fetch dashboard summary for a session
+ * @param {string} jwt - Authorization token
+ * @param {string} sessionId - Session ID
+ * @returns {Promise<Object>} Dashboard summary data
+ */
+export async function fetchDashboardSummary(jwt, sessionId) {
+    const resp = await fetch(`${API_BASE}/dashboard/sessions/${sessionId}/summary`, {
+        headers: { 'Authorization': `Bearer ${jwt}` },
+    });
+
+    if (!resp.ok) {
+        throw new Error(`Fetch dashboard summary failed: ${resp.status}`);
+    }
+
+    return resp.json();
+}
+
 export { API_BASE, DEV_MODE };
