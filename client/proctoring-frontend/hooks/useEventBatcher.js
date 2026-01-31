@@ -10,7 +10,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { sendEventBatch } from '../lib/api';
 
-const BATCH_INTERVAL_MS = 10000; // 10 seconds
+const BATCH_INTERVAL_MS = 5000; // 5 seconds
 
 /**
  * Generate unique event ID

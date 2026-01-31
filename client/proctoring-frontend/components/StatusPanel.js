@@ -17,7 +17,7 @@ const FLAG_STYLES = {
     FACE_OK: 'bg-green-100 text-green-800 border-green-300',
     FACE_MISSING: 'bg-yellow-100 text-yellow-800 border-yellow-300',
     MULTIPLE_FACES: 'bg-red-100 text-red-800 border-red-300',
-    LOW_LIGHT: 'bg-orange-100 text-orange-800 border-orange-300',
+    MULTI_PERSON: 'bg-red-600 text-white border-red-700',  // Prominent red for multi-person
     LOW_LIGHT: 'bg-orange-100 text-orange-800 border-orange-300',
     HEAD_ROTATED: 'bg-yellow-100 text-yellow-800 border-yellow-300',
     TAB_FOCUS_LOST: 'bg-red-100 text-red-800 border-red-300',
@@ -31,6 +31,7 @@ const FLAG_LABELS = {
     FACE_OK: '✓ Face OK',
     FACE_MISSING: '⚠ Face Missing',
     MULTIPLE_FACES: '✕ Multiple Faces',
+    MULTI_PERSON: '⚠ Multiple Persons Detected',
     LOW_LIGHT: '◐ Low Light',
     TAB_FOCUS_LOST: '⚠ Tab Focus Lost',
     SCREEN_SHARE_ACTIVE: '⎘ Screen Shared'

@@ -49,6 +49,6 @@ proctoring:
   replay:
     event-ttl-seconds: 3600
   thumbnails:
-    storage-path: ${PROCTORING_THUMBNAILS_PATH:/tmp/proctoring/thumbnails}
+    storage-path: ${PROCTORING_THUMBNAILS_PATH:../../infra/thumbnails}
   kafka:
     enabled: ${PROCTORING_KAFKA_ENABLED:false}

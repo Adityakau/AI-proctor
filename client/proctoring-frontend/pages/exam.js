@@ -137,15 +137,25 @@ export default function Exam() {
     }, []);
 
     // 5. Monitoring Logic (Tab Focus) - Uses TAB_SWITCH
+    // Track last focus loss time to prevent duplicate captures
+    const lastFocusLossRef = useRef(null);
+
     useEffect(() => {
         if (!windowFocus.isFocused) {
             addFlag('TAB_SWITCH');
             setFocusModal(true);
-            // Wait 500ms for screen share stream to update
-            const timer = setTimeout(() => {
-                captureViolation('TAB_SWITCH');
+
+            // Capture violation after 500ms delay (to let screen share show the other tab)
+            // Use ref to track, so returning to tab doesn't cancel capture
+            const captureTime = Date.now();
+            lastFocusLossRef.current = captureTime;
+
+            setTimeout(() => {
+                // Only capture if this is still the most recent focus loss
+                if (lastFocusLossRef.current === captureTime) {
+                    captureViolation('TAB_SWITCH');
+                }
             }, 500);
-            return () => clearTimeout(timer);
         } else {
             removeFlag('TAB_SWITCH');
         }
@@ -182,16 +192,46 @@ export default function Exam() {
         return () => clearTimeout(timer);
     }, [flags.FACE_MISSING, faceModal, captureViolation]);
 
-    // Multiple Faces (10s timer) - Uses MULTI_PERSON
+    // Multiple Faces - Accumulated timer approach (5s continuous detection)
+    const multiPersonStartRef = useRef(null);
+    const multiPersonCheckIntervalRef = useRef(null);
+
     useEffect(() => {
-        let timer;
+        // Start tracking when MULTI_PERSON flag appears
         if (flags.MULTI_PERSON && !multipleModal) {
-            timer = setTimeout(() => {
-                captureViolation('MULTI_PERSON');
-                setMultipleModal(true);
-            }, 10000);
+            // Record start time if not already tracking
+            if (!multiPersonStartRef.current) {
+                multiPersonStartRef.current = Date.now();
+            }
+
+            // Check every 500ms if we've hit 5 seconds
+            if (!multiPersonCheckIntervalRef.current) {
+                multiPersonCheckIntervalRef.current = setInterval(() => {
+                    if (multiPersonStartRef.current &&
+                        Date.now() - multiPersonStartRef.current >= 5000) {
+                        captureViolation('MULTI_PERSON');
+                        setMultipleModal(true);
+                        // Clear the interval after triggering
+                        clearInterval(multiPersonCheckIntervalRef.current);
+                        multiPersonCheckIntervalRef.current = null;
+                    }
+                }, 500);
+            }
+        } else if (!flags.MULTI_PERSON) {
+            // Reset when flag clears (person leaves frame)
+            multiPersonStartRef.current = null;
+            if (multiPersonCheckIntervalRef.current) {
+                clearInterval(multiPersonCheckIntervalRef.current);
+                multiPersonCheckIntervalRef.current = null;
+            }
         }
-        return () => clearTimeout(timer);
+
+        return () => {
+            if (multiPersonCheckIntervalRef.current) {
+                clearInterval(multiPersonCheckIntervalRef.current);
+                multiPersonCheckIntervalRef.current = null;
+            }
+        };
     }, [flags.MULTI_PERSON, multipleModal, captureViolation]);
 
 

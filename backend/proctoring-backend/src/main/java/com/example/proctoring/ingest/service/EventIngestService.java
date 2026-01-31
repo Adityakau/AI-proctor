@@ -41,6 +41,9 @@ public class EventIngestService {
     @Value("${proctoring.replay.event-ttl-seconds:3600}")
     private int eventTtlSeconds;
 
+    @Value("${proctoring.thumbnails.storage-path:/tmp/proctoring/thumbnails}")
+    private String thumbnailsStoragePath;
+
     public EventIngestService(ProctoringSessionRepository sessionRepository,
             AnomalyEventRepository anomalyEventRepository,
             AlertRepository alertRepository,
@@ -127,7 +130,7 @@ public class EventIngestService {
                     byte[] data = Base64.getDecoder().decode(thumb.getDataBase64());
                     String sha256 = computeSha256(data);
                     String filename = "thumb-" + eventId + ".jpg";
-                    java.nio.file.Path dir = java.nio.file.Paths.get("/tmp/proctoring/thumbnails", session.getId());
+                    java.nio.file.Path dir = java.nio.file.Paths.get(thumbnailsStoragePath, session.getId());
                     java.nio.file.Files.createDirectories(dir);
                     java.nio.file.Path filePath = dir.resolve(filename);
                     java.nio.file.Files.write(filePath, data);
