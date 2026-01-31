@@ -7,7 +7,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { fetchDevToken, startSession, endSession, sendHeartbeat, DEV_MODE } from '../lib/api';
 
-const HEARTBEAT_INTERVAL_MS = 10000; // 10 seconds
+const HEARTBEAT_INTERVAL_MS = 120000; // 120 seconds (2 minutes)
 
 export function useSession() {
     const [jwt, setJwt] = useState(null);

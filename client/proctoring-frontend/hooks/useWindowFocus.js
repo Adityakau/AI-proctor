@@ -4,19 +4,26 @@
  * Monitors:
  * 1. Page Visibility API (switching tabs, minimizing)
  * 2. Window Focus (clicking outside browser - e.g. dual monitor)
+ * 
+ * IMPORTANT: onVisibilityHidden fires SYNCHRONOUSLY when tab loses visibility,
+ * allowing immediate capture before browser throttles JS or screen changes.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
-export function useWindowFocus({ onFocusLost, onFocusGained } = {}) {
+export function useWindowFocus({ onFocusLost, onFocusGained, onVisibilityHidden } = {}) {
     const [isFocused, setIsFocused] = useState(true);
     const [lastBlurTime, setLastBlurTime] = useState(null);
 
-    const handleFocusChange = useCallback((focused) => {
+    // Track if we've already fired for this blur event (prevent double-fire)
+    const firedRef = useRef(false);
+
+    const handleFocusChange = useCallback((focused, isVisibilityEvent = false) => {
         setIsFocused(focused);
         const now = new Date().toISOString();
 
         if (focused) {
+            firedRef.current = false;
             if (onFocusGained) onFocusGained(now);
         } else {
             setLastBlurTime(now);
@@ -27,7 +34,17 @@ export function useWindowFocus({ onFocusLost, onFocusGained } = {}) {
     useEffect(() => {
         // 1. Page Visibility API (Tab switch / Minimize)
         const handleVisibilityChange = () => {
-            handleFocusChange(document.visibilityState === 'visible');
+            const hidden = document.visibilityState === 'hidden';
+
+            if (hidden && !firedRef.current) {
+                firedRef.current = true;
+                // Fire synchronous callback BEFORE React state update
+                if (onVisibilityHidden) {
+                    onVisibilityHidden();
+                }
+            }
+
+            handleFocusChange(document.visibilityState === 'visible', true);
         };
 
         // 2. Window Focus (Alt-Tab / Click away)
@@ -43,7 +60,7 @@ export function useWindowFocus({ onFocusLost, onFocusGained } = {}) {
             window.removeEventListener('blur', handleWindowBlur);
             window.removeEventListener('focus', handleWindowFocus);
         };
-    }, [handleFocusChange]);
+    }, [handleFocusChange, onVisibilityHidden]);
 
     return {
         isFocused,

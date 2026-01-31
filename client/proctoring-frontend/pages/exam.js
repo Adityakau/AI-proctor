@@ -15,6 +15,7 @@ import { useProctoring } from '../context/ProctoringProvider';
 import { useFrameAnalyzer } from '../hooks/useFrameAnalyzer';
 import { useFullscreen } from '../hooks/useFullscreen';
 import { getEvidenceScheduler, destroyEvidenceScheduler } from '../lib/evidenceScheduler';
+import { getFrameBuffer, destroyFrameBuffer } from '../lib/frameBuffer';
 import QuestionCard from '../components/QuestionCard';
 import ProctoringStatusIcons from '../components/ProctoringStatusIcons';
 
@@ -37,12 +38,22 @@ export default function Exam() {
 
     // Evidence scheduler ref
     const schedulerRef = useRef(null);
+    // Frame buffer ref
+    const frameBufferRef = useRef(null);
 
-    // Initialize evidence scheduler
+    // Initialize evidence scheduler and frame buffer
     useEffect(() => {
         schedulerRef.current = getEvidenceScheduler();
+        frameBufferRef.current = getFrameBuffer();
+
+        // Start frame buffer when webcam is ready
+        if (videoRef.current) {
+            frameBufferRef.current.start(videoRef.current, screenVideoRef.current);
+        }
+
         return () => {
             destroyEvidenceScheduler();
+            destroyFrameBuffer();
         };
     }, []);
 
@@ -63,8 +74,19 @@ export default function Exam() {
     useEffect(() => {
         if (screenVideoRef.current && screenShare.stream) {
             screenVideoRef.current.srcObject = screenShare.stream;
+            // Update frame buffer with screen video ref
+            if (frameBufferRef.current) {
+                frameBufferRef.current.setScreenVideo(screenVideoRef.current);
+            }
         }
     }, [screenShare.stream]);
+
+    // Start frame buffer when webcam becomes ready
+    useEffect(() => {
+        if (videoRef.current && webcam.stream && frameBufferRef.current) {
+            frameBufferRef.current.start(videoRef.current, screenVideoRef.current);
+        }
+    }, [webcam.stream]);
 
     // 3. Load stored violations on mount
     useEffect(() => {
@@ -76,17 +98,8 @@ export default function Exam() {
         }
     }, []);
 
-    // 4. Evidence capture using scheduler (visibility-aware, rate-limited)
-    const captureEvidence = useCallback((type, videoElement = null) => {
-        if (!schedulerRef.current) return;
-
-        const targetVideo = videoElement || videoRef.current;
-        if (!targetVideo) {
-            // No video, still send event without thumbnail
-            eventBatcher.addEvent(type, 0.8, {}, null);
-            return;
-        }
-
+    // 4. Evidence capture using FRAME BUFFER (instant, reliable)
+    const captureEvidence = useCallback((type, preference = 'webcam') => {
         // Confidence map
         const confidenceMap = {
             MULTI_PERSON: 0.95,
@@ -97,73 +110,26 @@ export default function Exam() {
             CAMERA_BLOCKED: 0.95,
         };
 
-        schedulerRef.current.queue(
+        // Get frame from buffer (instant - already captured)
+        const frame = frameBufferRef.current?.getFrame(preference);
+        const thumbnailBase64 = frame?.base64 || null;
+
+        // Send to backend
+        const eventId = eventBatcher.addEvent(
             type,
-            targetVideo,
-            (thumbnailBase64) => {
-                // Send to backend
-                const eventId = eventBatcher.addEvent(
-                    type,
-                    confidenceMap[type] || 0.8,
-                    {},
-                    thumbnailBase64
-                );
-
-                // Update local violations for UI
-                if (thumbnailBase64) {
-                    const newViolation = {
-                        id: Date.now(),
-                        timestamp: new Date().toLocaleTimeString(),
-                        type,
-                        eventId,
-                        image: `data:image/jpeg;base64,${thumbnailBase64}`,
-                    };
-
-                    setViolations(prev => {
-                        const updated = [newViolation, ...prev].slice(0, 5);
-                        localStorage.setItem('proctoring_violations', JSON.stringify(updated));
-                        return updated;
-                    });
-                }
-            },
-            { allowWithoutSnapshot: true }
+            confidenceMap[type] || 0.8,
+            {},
+            thumbnailBase64
         );
-    }, [eventBatcher]);
 
-    const clearViolations = useCallback(() => {
-        setViolations([]);
-        localStorage.removeItem('proctoring_violations');
-    }, []);
-
-    // 5. Tab Focus Monitoring - Capture when LEAVING to get screenshot of other tab
-    const tabSwitchCooldownRef = useRef(0);
-    const TAB_SWITCH_COOLDOWN_MS = 10000; // 10s cooldown
-
-    // Direct capture function for TAB_SWITCH - Higher quality: 320x180 at 0.75
-    const captureTabSwitch = useCallback((videoElement) => {
-        if (!videoElement || videoElement.readyState < 2) {
-            console.warn('[TabSwitch] Video not ready for capture');
-            eventBatcher.addEvent('TAB_SWITCH', 0.99, {}, null);
-            return;
-        }
-
-        try {
-            const canvas = document.createElement('canvas');
-            canvas.width = 320;   // Higher resolution
-            canvas.height = 180;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(videoElement, 0, 0, 320, 180);
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.75);  // Better quality
-            const thumbnailBase64 = dataUrl.split(',')[1];
-
-            const eventId = eventBatcher.addEvent('TAB_SWITCH', 0.99, {}, thumbnailBase64);
-
+        // Update local violations for UI display
+        if (frame) {
             const newViolation = {
                 id: Date.now(),
                 timestamp: new Date().toLocaleTimeString(),
-                type: 'TAB_SWITCH',
+                type,
                 eventId,
-                image: dataUrl,
+                image: frame.dataUrl,
             };
 
             setViolations(prev => {
@@ -171,38 +137,115 @@ export default function Exam() {
                 localStorage.setItem('proctoring_violations', JSON.stringify(updated));
                 return updated;
             });
-
-            console.log('[TabSwitch] Screenshot captured successfully');
-        } catch (err) {
-            console.error('[TabSwitch] Capture failed:', err);
-            eventBatcher.addEvent('TAB_SWITCH', 0.99, {}, null);
+            console.log(`[Evidence] Captured ${type} from buffer`);
+        } else {
+            console.warn(`[Evidence] No frame in buffer for ${type}`);
         }
     }, [eventBatcher]);
 
-    useEffect(() => {
-        const now = Date.now();
+    const clearViolations = useCallback(() => {
+        setViolations([]);
+        localStorage.removeItem('proctoring_violations');
+    }, []);
 
+    // 5. Tab Focus Monitoring - Composite capture (webcam + screen merged)
+    const tabSwitchCooldownRef = useRef(0);
+    const TAB_SWITCH_COOLDOWN_MS = 10000; // 10s cooldown
+
+    useEffect(() => {
         if (!windowFocus.isFocused) {
-            // Tab switched AWAY - capture the OTHER tab via screen share
+            // Tab switched away - show warning
             addFlag('TAB_SWITCH');
             setFocusModal(true);
 
-            // Check cooldown before capturing
+            // Check cooldown and capture
+            const now = Date.now();
             if (now - tabSwitchCooldownRef.current >= TAB_SWITCH_COOLDOWN_MS) {
                 tabSwitchCooldownRef.current = now;
 
-                // Capture with 500ms delay (screen share needs time to show other tab)
-                setTimeout(() => {
-                    const targetVideo = screenShare.isSharing && screenVideoRef.current
-                        ? screenVideoRef.current
-                        : videoRef.current;
-                    captureTabSwitch(targetVideo);
-                }, 500);
+                try {
+                    const webcamVideo = videoRef.current;
+                    const screenVideo = screenVideoRef.current;
+                    const hasWebcam = webcamVideo && webcamVideo.readyState >= 2;
+                    const hasScreen = screenShare.isSharing && screenVideo && screenVideo.readyState >= 2;
+
+                    if (hasWebcam || hasScreen) {
+                        // Create composite canvas: webcam on left (small), screen on right (larger)
+                        const webcamWidth = 160;
+                        const webcamHeight = 90;
+                        const screenWidth = hasScreen ? 320 : 0;
+                        const screenHeight = 180;
+                        const totalWidth = webcamWidth + screenWidth;
+                        const totalHeight = screenHeight;
+
+                        const canvas = document.createElement('canvas');
+                        canvas.width = totalWidth;
+                        canvas.height = totalHeight;
+                        const ctx = canvas.getContext('2d');
+
+                        // Fill background
+                        ctx.fillStyle = '#1a1a1a';
+                        ctx.fillRect(0, 0, totalWidth, totalHeight);
+
+                        // Draw webcam on left (centered vertically)
+                        if (hasWebcam) {
+                            const webcamY = (totalHeight - webcamHeight) / 2;
+                            ctx.drawImage(webcamVideo, 0, webcamY, webcamWidth, webcamHeight);
+
+                            // Add label
+                            ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                            ctx.fillRect(0, webcamY, webcamWidth, 16);
+                            ctx.fillStyle = '#fff';
+                            ctx.font = '10px Arial';
+                            ctx.fillText('Webcam', 4, webcamY + 12);
+                        }
+
+                        // Draw screen on right
+                        if (hasScreen) {
+                            ctx.drawImage(screenVideo, webcamWidth, 0, screenWidth, screenHeight);
+
+                            // Add label
+                            ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                            ctx.fillRect(webcamWidth, 0, screenWidth, 16);
+                            ctx.fillStyle = '#fff';
+                            ctx.font = '10px Arial';
+                            ctx.fillText('Screen', webcamWidth + 4, 12);
+                        }
+
+                        const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
+                        const base64 = dataUrl.split(',')[1];
+
+                        // Send to backend
+                        const eventId = eventBatcher.addEvent('TAB_SWITCH', 0.99, {}, base64);
+
+                        // Add to violations UI
+                        const newViolation = {
+                            id: Date.now(),
+                            timestamp: new Date().toLocaleTimeString(),
+                            type: 'TAB_SWITCH',
+                            eventId,
+                            image: dataUrl,
+                        };
+
+                        setViolations(prev => {
+                            const updated = [newViolation, ...prev].slice(0, 5);
+                            localStorage.setItem('proctoring_violations', JSON.stringify(updated));
+                            return updated;
+                        });
+                        console.log('[TabSwitch] Composite screenshot captured');
+                    } else {
+                        eventBatcher.addEvent('TAB_SWITCH', 0.99, {}, null);
+                        console.warn('[TabSwitch] No video sources ready');
+                    }
+                } catch (err) {
+                    console.error('[TabSwitch] Capture failed:', err);
+                    eventBatcher.addEvent('TAB_SWITCH', 0.99, {}, null);
+                }
             }
         } else {
             removeFlag('TAB_SWITCH');
         }
-    }, [windowFocus.isFocused, addFlag, removeFlag, captureTabSwitch, screenShare.isSharing]);
+    }, [windowFocus.isFocused, addFlag, removeFlag, eventBatcher, screenShare.isSharing]);
 
     // 6. Screen Share Monitoring
     useEffect(() => {
@@ -226,7 +269,12 @@ export default function Exam() {
 
         for (const event of events) {
             if (event.shouldEmit) {
-                captureEvidence(event.type);
+                // Skip screenshot for LOOK_AWAY (just send event)
+                if (event.type === 'LOOK_AWAY') {
+                    eventBatcher.addEvent('LOOK_AWAY', 0.85, {}, null);
+                } else {
+                    captureEvidence(event.type);
+                }
 
                 // Show appropriate modal
                 switch (event.type) {
@@ -243,7 +291,7 @@ export default function Exam() {
                 }
             }
         }
-    }, [consumePendingEvents, captureEvidence, faceModal, multipleModal, lightingModal, blockedModal]);
+    }, [consumePendingEvents, captureEvidence, eventBatcher, faceModal, multipleModal, lightingModal, blockedModal]);
 
     // 9. Frame Analysis
     const handleAnalysisResult = useCallback((results) => {
