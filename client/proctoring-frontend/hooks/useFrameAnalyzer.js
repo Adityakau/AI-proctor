@@ -10,9 +10,16 @@
  * - Measures processing time for safety monitoring
  */
 
+/**
+ * useFrameAnalyzer - Throttled frame analysis hook (Web Worker Version)
+ * 
+ * PERFORMANCE STRATEGY:
+ * - Offloads heavy calculations to a Web Worker
+ * - Uses setInterval for throttling
+ * - Manages worker lifecycle
+ */
+
 import { useRef, useCallback, useEffect } from 'react';
-import { detectFaces, preloadModel } from '../lib/faceDetector';
-import { checkFacePresence, checkMultipleFaces, checkBrightness, checkHeadRotation } from '../lib/checks';
 
 // Analysis interval in ms (500ms = 2 FPS)
 const ANALYSIS_INTERVAL_MS = 500;
@@ -34,6 +41,9 @@ export function useFrameAnalyzer({
     onAnalysisResult,
     getConsecutiveMissing
 }) {
+    // Worker reference
+    const workerRef = useRef(null);
+
     // Track if analysis is in progress (prevent overlap)
     const isProcessingRef = useRef(false);
 
@@ -44,9 +54,43 @@ export function useFrameAnalyzer({
     // Interval handle
     const intervalRef = useRef(null);
 
-    // Model loading state
-    const modelLoadingRef = useRef(false);
+    // Model loading state (managed by worker now)
+    const modelLoadingRef = useRef(true);
     const modelLoadedRef = useRef(false);
+
+    /**
+     * Initialize worker
+     */
+    useEffect(() => {
+        // Create worker
+        workerRef.current = new Worker(new URL('../workers/analysis.worker.js', import.meta.url));
+
+        // Setup listeners
+        workerRef.current.onmessage = (e) => {
+            const { type, results, success, error } = e.data;
+
+            if (type === 'ANALYSIS_COMPLETE') {
+                isProcessingRef.current = false;
+                onAnalysisResult(results);
+            } else if (type === 'INIT_COMPLETE') {
+                modelLoadingRef.current = false;
+                modelLoadedRef.current = success;
+                if (!success) console.error('Worker init failed:', error);
+            } else if (type === 'ERROR') {
+                isProcessingRef.current = false;
+                console.error('Worker error:', error);
+            }
+        };
+
+        // Initialize model in worker
+        workerRef.current.postMessage({ type: 'INIT' });
+
+        return () => {
+            if (workerRef.current) {
+                workerRef.current.terminate();
+            }
+        };
+    }, [onAnalysisResult]);
 
     /**
      * Initialize canvas (OffscreenCanvas or fallback)
@@ -55,29 +99,13 @@ export function useFrameAnalyzer({
         // Try OffscreenCanvas first (better performance, doesn't touch DOM)
         if (typeof OffscreenCanvas !== 'undefined') {
             canvasRef.current = new OffscreenCanvas(width, height);
-            ctxRef.current = canvasRef.current.getContext('2d');
+            ctxRef.current = canvasRef.current.getContext('2d', { willReadFrequently: true });
         } else {
             // Fallback: create hidden canvas
             canvasRef.current = document.createElement('canvas');
             canvasRef.current.width = width;
             canvasRef.current.height = height;
-            ctxRef.current = canvasRef.current.getContext('2d');
-        }
-    }, []);
-
-    /**
-     * Load model in background
-     */
-    const loadModel = useCallback(async () => {
-        if (modelLoadedRef.current || modelLoadingRef.current) return;
-
-        modelLoadingRef.current = true;
-        try {
-            await preloadModel();
-            modelLoadedRef.current = true;
-        } catch (err) {
-        } finally {
-            modelLoadingRef.current = false;
+            ctxRef.current = canvasRef.current.getContext('2d', { willReadFrequently: true });
         }
     }, []);
 
@@ -101,7 +129,6 @@ export function useFrameAnalyzer({
         }
 
         isProcessingRef.current = true;
-        const startTime = performance.now();
 
         try {
             const video = videoRef.current;
@@ -116,64 +143,49 @@ export function useFrameAnalyzer({
             // Draw current frame to canvas
             ctxRef.current.drawImage(video, 0, 0, width, height);
 
-            // Get image data for brightness check
+            // Get image data
             const imageData = ctxRef.current.getImageData(0, 0, width, height);
 
-            // Run face detection
-            const faces = await detectFaces(canvasRef.current);
-
-            // Run checks
+            // Get current consecutive count to pass to worker
+            // We need to pass this because state lives in main thread
             const consecutiveMissing = getConsecutiveMissing();
-            const { flag: faceFlag, newConsecutiveMissing } = checkFacePresence(faces, consecutiveMissing);
-            const multipleFlag = checkMultipleFaces(faces);
-            const brightnessFlag = checkBrightness(imageData);
 
-            // Check head rotation (enabled for LOOK_AWAY detection)
-            let rotationFlag = null;
-            if (faces.length === 1) {
-                rotationFlag = checkHeadRotation(faces[0]);
+            // Send to worker
+            if (workerRef.current) {
+                workerRef.current.postMessage({
+                    type: 'ANALYZE',
+                    payload: {
+                        imageData,
+                        consecutiveMissing
+                    }
+                }); // Note: could add transfer list [imageData.data.buffer] if checks don't need it? actually checks read it.
+                // Cloning imageData is usually fine for these resolutions. 
+                // To transfer, we'd need to extract the buffer which might detach it.
+            } else {
+                isProcessingRef.current = false;
             }
 
-            const processingTime = performance.now() - startTime;
-
-            // Report results
-            onAnalysisResult({
-                faces,
-                faceFlag,
-                multipleFlag,
-                brightnessFlag,
-                rotationFlag,
-                processingTime,
-                newConsecutiveMissing
-            });
-
         } catch (err) {
-        } finally {
+            console.error('Frame capture failed:', err);
             isProcessingRef.current = false;
         }
-    }, [videoRef, getConsecutiveMissing, onAnalysisResult, initCanvas]);
+    }, [videoRef, getConsecutiveMissing, initCanvas]);
 
     /**
      * Start analysis loop
      */
     const startAnalysis = useCallback(() => {
-        // Start model loading
-        loadModel();
-
         // Clear any existing interval
         if (intervalRef.current) {
             clearInterval(intervalRef.current);
         }
 
-        // Start new interval
-        // Using setInterval instead of requestAnimationFrame for consistent throttling
-        // rAF would run at display refresh rate (60+ FPS), wasting CPU
         intervalRef.current = setInterval(() => {
             if (modelLoadedRef.current) {
                 analyzeFrame();
             }
         }, ANALYSIS_INTERVAL_MS);
-    }, [loadModel, analyzeFrame]);
+    }, [analyzeFrame]);
 
     /**
      * Stop analysis loop
