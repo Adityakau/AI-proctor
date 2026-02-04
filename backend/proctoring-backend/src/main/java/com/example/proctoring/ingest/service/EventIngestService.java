@@ -18,12 +18,16 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 
 @Service
 public class EventIngestService {
+    private static final Logger log = LoggerFactory.getLogger(EventIngestService.class);
 
     private final ProctoringSessionRepository sessionRepository;
     private final AnomalyEventRepository anomalyEventRepository;
@@ -153,6 +157,7 @@ public class EventIngestService {
                                 "size", data.length,
                                 "sha256", sha256)));
                         anomalyEventRepository.save(event);
+                    }
                 } catch (Exception e) {
                     log.error("Failed to process thumbnail for event {}: {}", thumb.getEventId(), e.getMessage(), e);
                 }
