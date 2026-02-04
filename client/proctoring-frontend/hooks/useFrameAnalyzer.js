@@ -21,8 +21,8 @@
 
 import { useRef, useCallback, useEffect } from 'react';
 
-// Analysis interval in ms (500ms = 2 FPS for responsive detection)
-const ANALYSIS_INTERVAL_MS = 500;
+// Analysis interval in ms (100ms = 10 FPS for instant detection)
+const ANALYSIS_INTERVAL_MS = 100;
 
 // Target resolution for detection (smaller = faster)
 const DETECTION_WIDTH = 160;

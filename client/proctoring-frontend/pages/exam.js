@@ -18,6 +18,7 @@ import { getEvidenceScheduler, destroyEvidenceScheduler } from '../lib/evidenceS
 import { getFrameBuffer, destroyFrameBuffer } from '../lib/frameBuffer';
 import QuestionCard from '../components/QuestionCard';
 import ProctoringStatusIcons from '../components/ProctoringStatusIcons';
+import WarningModal from '../components/WarningModal';
 
 // Debug mode via environment variable
 const DEBUG_MODE = process.env.NEXT_PUBLIC_PROCTOR_DEBUG === 'true';
@@ -293,9 +294,12 @@ export default function Exam() {
         }
     }, [consumePendingEvents, captureEvidence, eventBatcher, faceModal, multipleModal, lightingModal, blockedModal]);
 
+    const [instantFaceMissing, setInstantFaceMissing] = useState(false);
+
     // 9. Frame Analysis
     const handleAnalysisResult = useCallback((results) => {
         setModelLoading(false);
+        setInstantFaceMissing(results.faceCount === 0);
         updateFromAnalysis(results);
     }, [updateFromAnalysis]);
 
@@ -377,11 +381,14 @@ export default function Exam() {
                     {/* Right: Sidebar */}
                     <div className="w-80 flex flex-col gap-6">
 
+
+
                         {/* Status Icons */}
                         <div className="flex justify-end">
                             <ProctoringStatusIcons
                                 flags={flags}
                                 screenShareActive={screenShare.isSharing}
+                                instantFaceMissing={instantFaceMissing}
                             />
                         </div>
 
@@ -458,148 +465,100 @@ export default function Exam() {
                         </div>
 
                         {/* Debug Overlay (only in debug mode) */}
-                        {DEBUG_MODE && (
-                            <div className="bg-gray-900 text-green-400 p-3 rounded-lg text-xs font-mono">
-                                <div>Processing: {lastProcessingTime?.toFixed(0)}ms</div>
-                                <div>Flags: {Object.keys(flags).join(', ') || 'none'}</div>
-                            </div>
-                        )}
-                    </div>
+                        {
+                            DEBUG_MODE && (
+                                <div className="bg-gray-900 text-green-400 p-3 rounded-lg text-xs font-mono">
+                                    <div>Processing: {lastProcessingTime?.toFixed(0)}ms</div>
+                                    <div>Flags: {Object.keys(flags).join(', ') || 'none'}</div>
+                                </div>
+                            )
+                        }
+                    </div >
 
-                </div>
+                </div >
 
-            </main>
+            </main >
+
+            {/* BLOCKING MODALS */}
 
             {/* BLOCKING MODALS */}
 
             {/* Fullscreen Required */}
-            {!isFullscreen && (
-                <div className="fixed inset-0 z-50 bg-white/50 backdrop-blur-md flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border border-red-100">
-                        <div className="text-6xl mb-4">⚠️</div>
-                        <h2 className="text-2xl font-bold text-gray-800 mb-2">Fullscreen Required</h2>
-                        <p className="text-gray-600 mb-6">Please return to full screen mode to continue the exam.</p>
-                        <button
-                            onClick={enterFullscreen}
-                            className="w-full py-3 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 transition-colors shadow-lg"
-                        >
-                            Return to Full Screen
-                        </button>
-                    </div>
-                </div>
-            )}
+            <WarningModal
+                isOpen={!isFullscreen}
+                type="fullscreen"
+                title="Fullscreen Required"
+                message="Please return to full screen mode to continue the exam."
+                onDismiss={enterFullscreen}
+                actionText="Return to Full Screen"
+                severity="critical"
+            />
 
             {/* Screen Share Required */}
-            {isFullscreen && !screenShare.isSharing && (
-                <div className="fixed inset-0 z-50 bg-white/50 backdrop-blur-md flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border border-orange-100">
-                        <div className="text-6xl mb-4">🖥️</div>
-                        <h2 className="text-2xl font-bold text-gray-800 mb-2">Screen Share Required</h2>
-                        <p className="text-gray-600 mb-6">You must share your entire screen to continue.</p>
-                        <button
-                            onClick={screenShare.startScreenShare}
-                            className="w-full py-3 bg-orange-600 text-white rounded-lg font-bold hover:bg-orange-700 transition-colors shadow-lg"
-                        >
-                            Share Entire Screen
-                        </button>
-                    </div>
-                </div>
-            )}
+            <WarningModal
+                isOpen={isFullscreen && !screenShare.isSharing}
+                type="screenshare"
+                title="Screen Share Required"
+                message="You must share your entire screen to continue."
+                onDismiss={screenShare.startScreenShare}
+                actionText="Share Entire Screen"
+                severity="critical"
+            />
 
             {/* Face Not Visible */}
-            {faceModal && (
-                <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border-4 border-red-500">
-                        <div className="text-6xl mb-4">🚫</div>
-                        <h2 className="text-2xl font-bold text-red-600 mb-2">Face Not Visible</h2>
-                        <p className="text-gray-700 mb-6">
-                            Your face has been out of frame. This incident has been recorded.
-                        </p>
-                        <button
-                            onClick={() => setFaceModal(false)}
-                            className="bg-red-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-red-700 shadow-lg"
-                        >
-                            Continue Exam
-                        </button>
-                    </div>
-                </div>
-            )}
+            <WarningModal
+                isOpen={faceModal}
+                type="FACE_MISSING"
+                title="Face Not Visible"
+                message="Your face has been out of frame. This incident has been recorded."
+                onDismiss={() => setFaceModal(false)}
+                actionText="Continue Exam"
+                severity="high"
+            />
 
             {/* Multiple Faces */}
-            {multipleModal && (
-                <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border-4 border-orange-500">
-                        <div className="text-6xl mb-4">👥</div>
-                        <h2 className="text-2xl font-bold text-orange-600 mb-2">Multiple People Detected</h2>
-                        <p className="text-gray-700 mb-6">
-                            We detected multiple people in your camera. Ensure you are alone.
-                        </p>
-                        <button
-                            onClick={() => setMultipleModal(false)}
-                            className="bg-orange-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-orange-700 shadow-lg"
-                        >
-                            I Understand
-                        </button>
-                    </div>
-                </div>
-            )}
+            <WarningModal
+                isOpen={multipleModal}
+                type="MULTI_PERSON"
+                title="Multiple People Detected"
+                message="We detected multiple people in your camera. Ensure you are alone."
+                onDismiss={() => setMultipleModal(false)}
+                actionText="I Understand"
+                severity="high"
+            />
 
             {/* Tab Switch */}
-            {focusModal && (
-                <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border-4 border-indigo-500">
-                        <div className="text-6xl mb-4">⚠️</div>
-                        <h2 className="text-2xl font-bold text-indigo-600 mb-2">Focus Lost</h2>
-                        <p className="text-gray-700 mb-6">
-                            You switched tabs or windows. This has been recorded.
-                        </p>
-                        <button
-                            onClick={() => setFocusModal(false)}
-                            className="bg-indigo-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-indigo-700 shadow-lg"
-                        >
-                            Continue Exam
-                        </button>
-                    </div>
-                </div>
-            )}
+            <WarningModal
+                isOpen={focusModal}
+                type="TAB_SWITCH"
+                title="Focus Lost"
+                message="You switched tabs or windows. This has been recorded."
+                onDismiss={() => setFocusModal(false)}
+                actionText="Continue Exam"
+                severity="medium"
+            />
 
             {/* Low Light */}
-            {lightingModal && (
-                <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border-4 border-yellow-500">
-                        <div className="text-6xl mb-4">💡</div>
-                        <h2 className="text-2xl font-bold text-yellow-600 mb-2">Poor Lighting</h2>
-                        <p className="text-gray-700 mb-6">
-                            The lighting is too low. Please improve your lighting conditions.
-                        </p>
-                        <button
-                            onClick={() => setLightingModal(false)}
-                            className="bg-yellow-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-yellow-700 shadow-lg"
-                        >
-                            I've Fixed It
-                        </button>
-                    </div>
-                </div>
-            )}
+            <WarningModal
+                isOpen={lightingModal}
+                type="LOW_LIGHT"
+                title="Poor Lighting"
+                message="The lighting is too low. Please improve your lighting conditions."
+                onDismiss={() => setLightingModal(false)}
+                actionText="I've Fixed It"
+                severity="low"
+            />
 
             {/* Camera Blocked */}
-            {blockedModal && (
-                <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md text-center border-4 border-red-600">
-                        <div className="text-6xl mb-4">📷</div>
-                        <h2 className="text-2xl font-bold text-red-600 mb-2">Camera Blocked</h2>
-                        <p className="text-gray-700 mb-6">
-                            Your camera appears to be blocked or covered. Please uncover it.
-                        </p>
-                        <button
-                            onClick={() => setBlockedModal(false)}
-                            className="bg-red-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-red-700 shadow-lg"
-                        >
-                            Camera is Clear
-                        </button>
-                    </div>
-                </div>
-            )}
+            <WarningModal
+                isOpen={blockedModal}
+                type="CAMERA_BLOCKED"
+                title="Camera Blocked"
+                message="Your camera appears to be blocked or covered. Please uncover it."
+                onDismiss={() => setBlockedModal(false)}
+                actionText="Camera is Clear"
+                severity="critical"
+            />
         </>
     );
 }

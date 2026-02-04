@@ -29,7 +29,10 @@ export function useSession() {
             let token = jwt;
             if (!token && DEV_MODE) {
                 token = await fetchDevToken();
-                if (token) setJwt(token);
+                if (token) {
+                    setJwt(token);
+                    localStorage.setItem('proctoring_jwt', token);
+                }
             }
 
             if (!token) {

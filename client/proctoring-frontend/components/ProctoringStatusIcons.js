@@ -9,8 +9,9 @@
  */
 import React from 'react';
 
-export default function ProctoringStatusIcons({ flags, screenShareActive }) {
-    const isFaceMissing = flags.FACE_MISSING;
+export default function ProctoringStatusIcons({ flags, screenShareActive, instantFaceMissing }) {
+    // Show RED if face is genuinely missing right now, OR if the flag is set
+    const isFaceMissing = instantFaceMissing || flags.FACE_MISSING;
     const isMultipleFaces = flags.MULTI_PERSON;
     const isLowLight = flags.LOW_LIGHT;
 
@@ -24,7 +25,7 @@ export default function ProctoringStatusIcons({ flags, screenShareActive }) {
     return (
         <div className="flex gap-2 bg-white p-2 rounded-lg border border-gray-200 shadow-sm relative z-20">
             {/* Face Presence */}
-            <div className={`group relative flex items-center justify-center w-8 h-8 rounded border ${getStatusColor(isFaceMissing)}`}>
+            <div className={`group relative flex items-center justify-center w-8 h-8 rounded border ${getStatusColor(isFaceMissing)} transition-colors duration-200`}>
                 <span className="material-icons text-sm">face</span>
                 <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-max px-2 py-1 bg-gray-800 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-30">
                     {isFaceMissing ? "Face Missing" : "Face Detected"}

@@ -1,9 +1,8 @@
 /**
- * Dashboard Page - Read-only session summary
+ * Dashboard Page - Premium Redesign
  * 
  * Route: /exam/[sessionId]/dashboard
- * Displays session summary after exam completion.
- * NO proctoring logic, NO camera access, safe to refresh.
+ * Displays session summary with glassmorphism, animations, and dark aesthetics.
  */
 
 import { useState, useEffect } from 'react';
@@ -45,15 +44,15 @@ function EvidenceImage({ evidenceId, jwt, className }) {
 
     if (error) {
         return (
-            <div className={`flex items-center justify-center bg-gray-800 text-gray-500 text-xs ${className}`}>
-                Image Error
+            <div className={`flex items-center justify-center bg-gray-800/50 text-gray-500 text-xs ${className}`}>
+                <span className="opacity-50">Error</span>
             </div>
         );
     }
 
     if (!imageUrl) {
         return (
-            <div className={`animate-pulse bg-gray-700 ${className}`} />
+            <div className={`animate-pulse bg-white/5 ${className}`} />
         );
     }
 
@@ -78,25 +77,32 @@ export default function Dashboard() {
             try {
                 setLoading(true);
                 setError(null);
-
-                // Get JWT (in dev mode, fetch a new token)
                 let token = localStorage.getItem('proctoring_jwt');
 
-                // If in dev mode and no token, OR if explicit dev token fetch is needed
-                // Note: For dashboard, we usually want the SAME token used for the exam.
-                // But if that's lost, we might need a dev token to view it (if allowed).
+                // Only fetch new token if we absolutely don't have one. 
+                // Creating a new token creates a NEW user, which won't match the old session.
                 if (!token && DEV_MODE) {
+                    console.warn("No token found. Generating new Dev token (Warning: This may not match the session owner).");
                     token = await fetchDevToken();
                     if (token) localStorage.setItem('proctoring_jwt', token);
                 }
 
-                if (!token) {
-                    throw new Error('No authentication token available');
-                }
+                if (!token) throw new Error('No authentication token available');
                 setJwt(token);
 
-                const data = await fetchDashboardSummary(token, sessionId);
-                setSummary(data);
+                try {
+                    const data = await fetchDashboardSummary(token, sessionId);
+                    setSummary(data);
+                } catch (apiError) {
+                    if (apiError.message.includes('401') || apiError.message.includes('403')) {
+                        // 401/403 means token is bad or mismatches the session owner.
+                        // We cannot fix this by getting a new token (as it would be a new user).
+                        // We must ask user to start over.
+                        localStorage.removeItem('proctoring_jwt'); // Clear bad token
+                        throw new Error("Session expired or unauthorized. Please start a new exam.");
+                    }
+                    throw apiError;
+                }
             } catch (e) {
                 console.error('Failed to load dashboard summary:', e);
                 setError(e.message);
@@ -108,153 +114,210 @@ export default function Dashboard() {
         loadSummary();
     }, [sessionId]);
 
-    // Format timestamp for display
     const formatTime = (isoString) => {
         if (!isoString) return 'N/A';
-        return new Date(isoString).toLocaleString();
+        return new Date(isoString).toLocaleString(undefined, {
+            weekday: 'short', hour: '2-digit', minute: '2-digit'
+        });
     };
 
-    // Get trust score color
     const getTrustScoreColor = (score) => {
-        if (score >= 80) return 'text-green-600';
-        if (score >= 60) return 'text-yellow-600';
-        return 'text-red-600';
+        if (score >= 80) return 'text-emerald-400';
+        if (score >= 60) return 'text-yellow-400';
+        return 'text-rose-500';
+    };
+
+    const getTrustScoreGradient = (score) => {
+        if (score >= 80) return 'from-emerald-400 to-cyan-400';
+        if (score >= 60) return 'from-yellow-400 to-orange-400';
+        return 'from-rose-500 to-pink-500';
     };
 
     return (
         <>
             <Head>
-                <title>Exam Dashboard | Proctoring</title>
+                <title>Exam Result | Proctoring</title>
             </Head>
 
-            <div className="min-h-screen bg-gray-900 text-white p-8">
-                <div className="max-w-6xl mx-auto">
+            <div className="min-h-screen bg-[#0a0a0f] text-white font-sans selection:bg-purple-500/30">
+                {/* Background Ambient Glow */}
+                <div className="fixed inset-0 pointer-events-none">
+                    <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl opacity-50 mix-blend-screen" />
+                    <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl opacity-50 mix-blend-screen" />
+                </div>
+
+                <div className="max-w-7xl mx-auto p-8 relative z-10">
+
                     {/* Header */}
-                    <div className="mb-8 flex justify-between items-center">
-                        <div>
-                            <h1 className="text-3xl font-bold mb-2">Exam Dashboard</h1>
-                            <p className="text-gray-400">Session ID: {sessionId}</p>
+                    <div className="flex flex-col md:flex-row justify-between items-center mb-12 border-b border-white/5 pb-6">
+                        <div className="text-center md:text-left">
+                            <h1 className="text-4xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400 tracking-tight mb-2">
+                                Session Report
+                            </h1>
+                            <p className="text-gray-400 font-mono text-xs tracking-wider uppercase opacity-70">
+                                ID: {sessionId || 'Loading...'}
+                            </p>
                         </div>
                         <button
                             onClick={() => router.push('/')}
-                            className="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded text-sm"
+                            className="mt-6 md:mt-0 px-6 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-sm font-medium transition-all hover:scale-105 active:scale-95"
                         >
                             Back to Home
                         </button>
                     </div>
 
-                    {/* Loading State */}
+                    {/* Content */}
                     {loading && (
-                        <div className="flex items-center justify-center py-12">
-                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-                            <span className="ml-4 text-gray-400">Loading summary...</span>
+                        <div className="flex flex-col items-center justify-center py-20">
+                            <div className="w-16 h-16 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin mb-6" />
+                            <span className="text-gray-500 text-sm tracking-widest uppercase animate-pulse">Generating Analytics...</span>
                         </div>
                     )}
 
-                    {/* Error State */}
                     {error && (
-                        <div className="bg-red-900/50 border border-red-500 rounded-lg p-6 mb-6">
-                            <h3 className="text-red-400 font-semibold mb-2">Error Loading Dashboard</h3>
-                            <p className="text-gray-300">{error}</p>
+                        <div className="max-w-xl mx-auto bg-red-500/10 border border-red-500/30 rounded-2xl p-8 text-center backdrop-blur-xl">
+                            <div className="text-3xl mb-4">⚠️</div>
+                            <h3 className="text-xl font-bold text-red-400 mb-2">Unable to Load Report</h3>
+                            <p className="text-gray-400 mb-6 text-sm">{error}</p>
                             <button
-                                onClick={() => router.reload()}
-                                className="mt-4 px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-white"
+                                onClick={() => router.push('/')}
+                                className="px-8 py-3 bg-red-500/20 hover:bg-red-500/30 border border-red-500/50 rounded-lg text-red-200 transition-all font-bold"
                             >
-                                Retry
+                                Start New Exam
                             </button>
                         </div>
                     )}
 
-                    {/* Summary Content */}
                     {summary && !loading && (
-                        <div className="space-y-6">
-                            {/* Candidate Info & Trust Score */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-                                    <h2 className="text-lg font-semibold mb-4 text-gray-300">Candidate Information</h2>
-                                    <div className="space-y-3">
-                                        <p className="flex justify-between border-b border-gray-700 pb-2">
-                                            <span className="text-gray-400">Name:</span>
-                                            <span className="font-mono">{summary.userName || 'N/A'}</span>
-                                        </p>
-                                        <p className="flex justify-between border-b border-gray-700 pb-2">
-                                            <span className="text-gray-400">Started:</span>
-                                            <span className="font-mono">{formatTime(summary.startedAt)}</span>
-                                        </p>
-                                        <p className="flex justify-between">
-                                            <span className="text-gray-400">Ended:</span>
-                                            <span className="font-mono">{formatTime(summary.submittedAt)}</span>
-                                        </p>
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+
+                            {/* Left Column: Stats & Score */}
+                            <div className="lg:col-span-4 space-y-6">
+
+                                {/* Trust Score Card */}
+                                <div className="bg-gray-900/40 backdrop-blur-xl border border-white/10 rounded-3xl p-8 relative overflow-hidden group">
+                                    <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r ${getTrustScoreGradient(summary.trustScorePercent)}`} />
+
+                                    <h2 className="text-gray-400 text-sm font-medium uppercase tracking-wider mb-6">Trust Score</h2>
+
+                                    <div className="flex items-baseline">
+                                        <span className={`text-7xl font-black bg-clip-text text-transparent bg-gradient-to-br ${getTrustScoreGradient(summary.trustScorePercent)}`}>
+                                            {summary.trustScorePercent}
+                                        </span>
+                                        <span className="text-2xl text-gray-500 font-medium ml-2">/100</span>
+                                    </div>
+
+                                    <div className="mt-8 space-y-4">
+                                        <div className="flex justify-between text-sm py-2 border-b border-white/5">
+                                            <span className="text-gray-500">Status</span>
+                                            <span className={`font-bold ${getTrustScoreColor(summary.trustScorePercent)}`}>
+                                                {summary.trustScorePercent >= 80 ? 'Excellent' : summary.trustScorePercent >= 60 ? 'Review Needed' : 'Flagged'}
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
 
-                                <div className="bg-gray-800 rounded-lg p-6 border border-gray-700 flex flex-col items-center justify-center">
-                                    <h2 className="text-lg font-semibold mb-2 text-gray-300">Trust Score</h2>
-                                    <div className={`text-6xl font-bold ${getTrustScoreColor(summary.trustScorePercent)}`}>
-                                        {summary.trustScorePercent}%
+                                {/* Candidate Details */}
+                                <div className="bg-gray-900/40 backdrop-blur-xl border border-white/10 rounded-3xl p-8">
+                                    <h3 className="text-gray-400 text-sm font-medium uppercase tracking-wider mb-6">Candidate</h3>
+                                    <div className="space-y-4">
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-lg font-bold">
+                                                {summary.userName ? summary.userName[0] : 'U'}
+                                            </div>
+                                            <div>
+                                                <div className="font-bold text-lg">{summary.userName || 'Unknown'}</div>
+                                                <div className="text-xs text-gray-500 font-mono">ID: {summary.userId?.substring(0, 8)}...</div>
+                                            </div>
+                                        </div>
+                                        <div className="pt-4 border-t border-white/5 space-y-2 text-sm">
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-500">Started</span>
+                                                <span className="text-gray-300 font-mono">{formatTime(summary.startedAt)}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-500">Submitted</span>
+                                                <span className="text-gray-300 font-mono">{formatTime(summary.submittedAt)}</span>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <p className="text-sm text-gray-500 mt-2">Based on detected anomalies</p>
                                 </div>
+
+                                {/* System Info (Compact) */}
+                                {summary.deviceInfo && (
+                                    <div className="bg-gray-900/40 backdrop-blur-xl border border-white/10 rounded-3xl p-6">
+                                        <h3 className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-4">System</h3>
+                                        <div className="grid grid-cols-1 gap-2 text-xs font-mono text-gray-500">
+                                            {Object.entries(summary.deviceInfo).slice(0, 3).map(([k, v]) => (
+                                                <div key={k} className="flex justify-between">
+                                                    <span>{k}</span>
+                                                    <span className="text-gray-400 truncate max-w-[120px]">{String(v)}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
-                            {/* Alert Summary */}
-                            {summary.alertSummary && summary.alertSummary.length > 0 && (
-                                <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-                                    <h2 className="text-lg font-semibold mb-4 text-gray-300">Detected Anomalies</h2>
+                            {/* Right Column: Evidence & Alerts */}
+                            <div className="lg:col-span-8 space-y-6">
+
+                                {/* Alert Grid */}
+                                {summary.alertSummary && (
                                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                         {summary.alertSummary.map((alert, idx) => (
-                                            <div key={idx} className="bg-gray-700/50 rounded-lg p-4 text-center border border-gray-600">
-                                                <div className="text-3xl font-bold text-yellow-400">{alert.totalCount}</div>
-                                                <div className="text-xs text-gray-400 mt-1 uppercase tracking-wider">{alert.alertType.replace(/_/g, ' ')}</div>
+                                            <div key={idx} className="bg-gray-800/30 border border-white/5 rounded-2xl p-4 flex flex-col items-center justify-center transition-all hover:bg-gray-800/50 hover:scale-105">
+                                                <div className="text-3xl font-bold text-white mb-1">{alert.totalCount}</div>
+                                                <div className="text-[10px] uppercase tracking-wider text-gray-500 text-center font-bold">
+                                                    {alert.alertType.replace(/_/g, ' ')}
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
-                                </div>
-                            )}
+                                )}
 
-                            {/* Evidence Gallery */}
-                            {summary.evidenceSummary && summary.evidenceSummary.length > 0 && (
-                                <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-                                    <h2 className="text-lg font-semibold mb-4 text-gray-300">Evidence Gallery ({summary.evidenceSummary.length})</h2>
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                                        {summary.evidenceSummary.map((evidence, idx) => (
-                                            <div key={idx} className="bg-gray-700 rounded-lg overflow-hidden flex flex-col h-48 border border-gray-600 transition hover:border-blue-500">
+                                {/* Evidence Gallery */}
+                                <div className="bg-gray-900/40 backdrop-blur-xl border border-white/10 rounded-3xl p-8">
+                                    <div className="flex justify-between items-end mb-6">
+                                        <h3 className="text-xl font-bold">Evidence Gallery</h3>
+                                        <span className="text-sm text-gray-500">{summary.evidenceSummary?.length || 0} Captures</span>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
+                                        {summary.evidenceSummary?.map((evidence, idx) => (
+                                            <div key={idx} className="group relative aspect-video bg-black rounded-xl overflow-hidden border border-white/5 shadow-2xl transition-all hover:border-blue-500/50 hover:scale-105">
                                                 <EvidenceImage
                                                     evidenceId={evidence.evidenceId}
                                                     jwt={jwt}
-                                                    className="w-full h-32"
+                                                    className="w-full h-full opacity-60 group-hover:opacity-100 transition-opacity duration-500"
                                                 />
-                                                <div className="p-2 flex-1 flex flex-col justify-between">
-                                                    <div className="text-[10px] text-gray-400 truncate" title={evidence.evidenceId}>
-                                                        ID: {evidence.evidenceId.substring(0, 8)}...
-                                                    </div>
-                                                    <div className="text-[10px] text-gray-300">
+                                                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-3">
+                                                    <span className="text-[10px] text-gray-300 font-mono">
                                                         {new Date(evidence.createdAt).toLocaleTimeString()}
-                                                    </div>
+                                                    </span>
                                                 </div>
                                             </div>
                                         ))}
                                     </div>
                                 </div>
-                            )}
-
-                            {/* Device Info */}
-                            {summary.deviceInfo && Object.keys(summary.deviceInfo).length > 0 && (
-                                <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-                                    <h2 className="text-lg font-semibold mb-4 text-gray-300">System Information</h2>
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-mono">
-                                        {Object.entries(summary.deviceInfo).map(([key, value]) => (
-                                            <div key={key} className="bg-gray-900 p-2 rounded border border-gray-700">
-                                                <span className="text-gray-500 block mb-1 uppercase text-[10px]">{key}</span>
-                                                <span className="text-gray-300 truncate block text-ellipsis">{String(value)}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
+                            </div>
                         </div>
                     )}
                 </div>
+
+                <style jsx global>{`
+                    .custom-scrollbar::-webkit-scrollbar {
+                        width: 6px;
+                    }
+                    .custom-scrollbar::-webkit-scrollbar-track {
+                        background: rgba(255, 255, 255, 0.05);
+                        border-radius: 4px;
+                    }
+                    .custom-scrollbar::-webkit-scrollbar-thumb {
+                        background: rgba(255, 255, 255, 0.2);
+                        border-radius: 4px;
+                    }
+                `}</style>
             </div>
         </>
     );
