@@ -8,7 +8,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
-import { fetchDashboardSummary, fetchDevToken, DEV_MODE } from '../../../lib/api';
+import { fetchDashboardSummary, fetchDevToken, DEV_MODE, API_BASE } from '../../../lib/api';
 
 // Secure Image Component
 function EvidenceImage({ evidenceId, jwt, className }) {
@@ -20,7 +20,7 @@ function EvidenceImage({ evidenceId, jwt, className }) {
 
         async function fetchImage() {
             try {
-                const resp = await fetch(`${DEV_MODE ? 'http://localhost:8082' : ''}/proctoring/evidence/${evidenceId}`, {
+                const resp = await fetch(`${API_BASE}/proctoring/evidence/${evidenceId}`, {
                     headers: { 'Authorization': `Bearer ${jwt}` }
                 });
                 if (!resp.ok) throw new Error('Failed to load image');
