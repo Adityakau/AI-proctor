@@ -153,9 +153,8 @@ public class EventIngestService {
                                 "size", data.length,
                                 "sha256", sha256)));
                         anomalyEventRepository.save(event);
-                    }
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    log.error("Failed to process thumbnail for event {}: {}", thumb.getEventId(), e.getMessage(), e);
                 }
             }
         }
