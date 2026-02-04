@@ -43,12 +43,12 @@ jwt:
 
 proctoring:
   events:
-    max-batch-size-bytes: 65536
+    max-batch-size-bytes: 1048576
   rate-limit:
     max-events-per-minute: 600
   replay:
     event-ttl-seconds: 3600
   thumbnails:
-    storage-path: ${PROCTORING_THUMBNAILS_PATH:../../infra/thumbnails}
+    storage-path: ${PROCTORING_THUMBNAILS_PATH:/tmp/proctoring/thumbnails}
   kafka:
     enabled: ${PROCTORING_KAFKA_ENABLED:false}
