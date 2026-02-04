@@ -78,11 +78,42 @@ const pitch = (noseTip.y - (forehead.y + chin.y) / 2) * 180;
 
 ---
 
-## 3. Backend Internal Flow
+## 3. Backend Internal Flow (Modular Monolith)
 
-### Event Ingest Service
-**File**: `backend/event-ingest-service/src/main/java/com/example/proctoring/ingest/`
+The backend is consolidated into a single Spring Boot application: `proctoring-backend`.
 
+### Package Structure
+```
+com.example.proctoring/
+├── ProctoringApplication.java      # Main entry point
+├── session/                        # Session management
+│   ├── controller/SessionController.java
+│   └── service/SessionService.java
+├── ingest/                         # Event ingestion
+│   ├── controller/EventBatchController.java
+│   └── service/EventIngestService.java
+├── alerts/                         # Alert retrieval
+│   └── controller/AlertsController.java
+├── evidence/                       # Thumbnail serving
+│   └── controller/EvidenceController.java
+├── rules/                          # Rules evaluation (Kafka consumer)
+│   ├── consumer/AnomalyEventConsumer.java
+│   └── service/RulesEvaluationService.java
+├── dev/                            # Dev-only token generation
+│   └── controller/DevTokenController.java
+├── dashboard/                      # Dashboard APIs (placeholder)
+│   └── controller/SessionReadController.java
+├── common/                         # Shared code
+│   ├── model/                      # JPA entities
+│   ├── dto/                        # DTOs
+│   └── repository/                 # Repositories
+├── security/                       # JWT config
+│   ├── JwtClaims.java
+│   └── JwtSecurityConfig.java
+└── config/                         # Other config
+```
+
+### Event Ingest Flow
 ```
 EventBatchController.ingestBatch()
     ↓
@@ -107,6 +138,15 @@ EventIngestService.processBatch()
 | `CAMERA_BLOCKED` | 3+ events in 5 min | HIGH |
 | `FACE_MISSING` | 3+ events in 5 min | HIGH |
 | HIGH/CRITICAL severity | Any | Same as event |
+
+### Trust Score Calculation
+Trust score is a percentage (0-100%) representing the overall session integrity.
+- **Data Source**: Confidence scores extracted from `proctoring_alerts.details_json`.
+- **Formula**: `trustScorePercent = round(avg(confidence) * 100)`
+- **Rules**:
+    - If no alerts exist, the score defaults to 100%.
+    - If an alert is missing the confidence field, it is ignored in the average.
+    - If all alerts are ignored, the score defaults to 100%.
 
 ---
 

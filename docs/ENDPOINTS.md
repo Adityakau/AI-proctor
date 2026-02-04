@@ -178,6 +178,45 @@ curl http://localhost:8082/proctoring/evidence/{evidenceId} \
 
 ---
 
+## Dashboard Summary
+
+### Get Session Summary
+```bash
+curl http://localhost:8082/dashboard/sessions/{sessionId}/summary \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Response:**
+```json
+{
+  "sessionId": "550e8400-e29b-41d4-a716-446655440000",
+  "userName": "John Doe",
+  "trustScorePercent": 85,
+  "startedAt": "2026-01-30T07:30:00Z",
+  "submittedAt": "2026-01-30T08:30:00Z",
+  "deviceInfo": {
+    "browser": "Chrome",
+    "os": "MacOS"
+  },
+  "alertSummary": [
+    {
+      "alertType": "FACE_MISSING",
+      "totalCount": 2
+    }
+  ],
+  "evidenceSummary": [
+    {
+      "evidenceId": "ev-123",
+      "filePath": "/storage/ev-123.jpg",
+      "mimeType": "image/jpeg",
+      "createdAt": "2026-01-30T07:35:00Z"
+    }
+  ]
+}
+```
+
+---
+
 ## Error Responses
 
 ### 400 Bad Request

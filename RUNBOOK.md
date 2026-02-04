@@ -35,9 +35,18 @@ docker compose ps
 
 ### 2. Start Backend Service
 
+**Option A: Docker (recommended)**
 ```bash
 cd /Users/Aditya/Desktop/PROCTORING/infra
-docker compose up -d event-ingest-service
+docker compose up -d proctoring-backend
+```
+
+**Option B: Local Maven**
+```bash
+cd /Users/Aditya/Desktop/PROCTORING/backend
+mvn clean package -DskipTests
+cd proctoring-backend
+mvn spring-boot:run
 ```
 
 Verify it's running:
